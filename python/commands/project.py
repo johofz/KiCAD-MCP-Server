@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 import pcbnew  # type: ignore
 from utils.kicad_project import write_kicad_pro
+from utils.sch_format import apply_schematic_header, schematic_header
 from utils.project_settings_guard import (
     preserve_project_settings,
     restore_project_file_if_changed,
@@ -89,7 +90,7 @@ class ProjectCommands:
             board.SetFileName(board_path)
             pcbnew.SaveBoard(board_path, board)
 
-            # Create schematic from a blank KiCad 10 template (empty lib_symbols,
+            # Create schematic from a blank template (empty lib_symbols,
             # no placed symbols). The old template_with_symbols_expanded.kicad_sch
             # pre-seeded _TEMPLATE_* symbols that leaked into every new project;
             # the live add tool synthesizes its own lib_symbols via the dynamic
@@ -119,6 +120,7 @@ class ProjectCommands:
                     content,
                     count=1,  # Only replace first (schematic) UUID
                 )
+                content = apply_schematic_header(content)
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
 
@@ -132,13 +134,9 @@ class ProjectCommands:
 
                 schematic_root_uuid = str(uuid_module.uuid4())
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    # KiCad 10 schematic header (matches what eeschema writes for a
-                    # new file). The older 20250114 token is the KiCad 9 format and
-                    # is stale under KiCad 10 (issue #221).
-                    f.write(
-                        '(kicad_sch (version 20260101) (generator "eeschema")'
-                        ' (generator_version "10.0")\n\n'
-                    )
+                    # Header in the format of the installed KiCad (9 or 10),
+                    # matching what eeschema writes for a new file (issue #221).
+                    f.write(schematic_header() + "\n\n")
                     f.write(f"  (uuid {schematic_root_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")

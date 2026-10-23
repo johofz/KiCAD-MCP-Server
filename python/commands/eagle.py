@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from commands.symbol_creator import KICAD9_SYMBOL_LIB_VERSION
+from utils.sch_format import schematic_header
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
@@ -1379,9 +1380,7 @@ def generate_kicad_sch(
     sch_uuid = _uid()
     out: List[str] = []
 
-    out.append(
-        '(kicad_sch (version 20260101) (generator "eeschema")' ' (generator_version "10.0")\n\n'
-    )
+    out.append(schematic_header() + "\n\n")
     out.append(f"  (uuid {sch_uuid})\n\n")
     out.append(f'  (paper "{paper}")\n\n')
 
