@@ -147,10 +147,11 @@ def _make_sheet_pin_text(
 ) -> str:
     """Generate a sheet pin S-expression as formatted text (indented for inside sheet block).
 
-    orientation: 0=right side of sheet box, 180=left side.
+    orientation: 0=right side of sheet box, 180=left side. The name sits inside
+    the box, so a right-side pin is right-justified (as eeschema writes it).
     """
     uid = str(uuid.uuid4())
-    justify = "left" if orientation == 0 else "right"
+    justify = "right" if orientation == 0 else "left"
     return (
         f'\t\t(pin "{escape_sexpr_string(pin_name)}" {pin_type}\n'
         f"\t\t\t(at {position[0]} {position[1]} {orientation})\n"
