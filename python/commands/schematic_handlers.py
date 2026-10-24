@@ -725,6 +725,17 @@ class SchematicHandlersMixin:
             properties = params.get("properties")
             # list[str]: ["OldField"] — protected built-ins are rejected
             remove_properties = params.get("removeProperties")
+            # symbol attributes: {"in_bom": False, ...}; None leaves one unchanged
+            attributes = {
+                key: params.get(name)
+                for key, name in (
+                    ("in_bom", "inBom"),
+                    ("on_board", "onBoard"),
+                    ("dnp", "dnp"),
+                    ("exclude_from_sim", "excludeFromSim"),
+                )
+                if params.get(name) is not None
+            }
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -738,13 +749,15 @@ class SchematicHandlersMixin:
                     field_positions is not None,
                     properties is not None,
                     remove_properties is not None,
+                    bool(attributes),
                 ]
             ):
                 return {
                     "success": False,
                     "message": (
                         "At least one of footprint, value, newReference, fieldPositions, "
-                        "properties, or removeProperties must be provided"
+                        "properties, removeProperties, inBom, onBoard, dnp or excludeFromSim "
+                        "must be provided"
                     ),
                 }
 
@@ -948,6 +961,21 @@ class SchematicHandlersMixin:
                         if removed and name not in properties_removed:
                             properties_removed.append(name)
 
+                # The flags sit before the first field; a missing one is added
+                # after (unit ...), where eeschema writes them.
+                head_end = block_text.find("(property")
+                head_end = len(block_text) if head_end < 0 else head_end
+                for key, on in attributes.items():
+                    token = f"({key} {'yes' if on else 'no'})"
+                    head = block_text[:head_end]
+                    new_head, n = re.subn(r"\(" + key + r"\s+(?:yes|no)\)", token, head, count=1)
+                    if not n:
+                        um = re.search(r"\(unit\s+\d+\)", head)
+                        cut = um.end() if um else head.find("\n") + 1
+                        new_head = head[:cut] + f" {token}" + head[cut:]
+                    block_text = new_head + block_text[head_end:]
+                    head_end += len(new_head) - len(head)
+
                 edited.append((block_start, block_end, block_text))
 
             for block_start, block_end, block_text in reversed(edited):
@@ -973,6 +1001,8 @@ class SchematicHandlersMixin:
                 changes["propertiesUpdated"] = properties_updated
             if properties_removed:
                 changes["propertiesRemoved"] = properties_removed
+            if attributes:
+                changes["attributes"] = attributes
 
             logger.info(f"Edited schematic component {reference}: {changes}")
             self._reload_kicad_schematic()
