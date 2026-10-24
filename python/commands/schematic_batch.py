@@ -234,6 +234,10 @@ class SchematicBatchCommands:
             except Exception as e:
                 logger.warning(f"Instance entries for {schematic_file} not checked: {e}")
 
+            # A pin placed on an existing wire must split it to connect.
+            if results:
+                WireManager.connect_placed_pins(Path(schematic_file))
+
             placement_bbox = None
             bbs = [r["body_bbox"] for r in results if "body_bbox" in r]
             if bbs:
