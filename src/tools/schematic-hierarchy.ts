@@ -1,5 +1,6 @@
 /**
- * Schematic hierarchy tools: insert a hierarchical sheet, scaffold a sub-sheet.
+ * Schematic hierarchy tools: insert a hierarchical sheet, scaffold a sub-sheet,
+ * list sheet instances and set a symbol's reference/unit per instance.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -126,6 +127,81 @@ export function registerSchematicHierarchyTools(server: McpServer, callKicadScri
           { type: "text", text: r.success ? r.message : `Failed: ${r.message || "Unknown error"}` },
         ],
       };
+    },
+  );
+
+  // List every use of every sheet (instance paths and page numbers)
+  server.tool(
+    "list_sheet_instances",
+    "List every sheet instance in the hierarchy below a root schematic, recursively: the root itself " +
+      "and one entry per use of each sub-sheet (a sheet placed four times is listed four times). Each " +
+      "entry has path (the KiCad instance path used in symbol (instances ...) entries: '/<root uuid>' " +
+      "for the root, '/<root uuid>/<sheet block uuid>' below it), sheetName, file (as written in the " +
+      "parent), filePath (absolute), page and parentPath (null for the root). Use the paths with " +
+      "set_symbol_instance.",
+    {
+      schematicPath: z.string().describe("Path to the ROOT .kicad_sch of the project"),
+    },
+    async (args: { schematicPath: string }) => {
+      const r = await callKicadScript("list_sheet_instances", args);
+      if (!r.success)
+        return {
+          content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }],
+          isError: true,
+        };
+      return {
+        content: [{ type: "text", text: JSON.stringify(r.instances, null, 2) }],
+      };
+    },
+  );
+
+  // Set a symbol's reference/unit in one use of its sheet
+  server.tool(
+    "set_symbol_instance",
+    "Set the reference and/or unit a placed symbol has in ONE use of its sheet, by editing (or " +
+      'creating) its (path "<instancePath>" (reference ..) (unit ..)) entry. Lets one quad op-amp ' +
+      "symbol on a sheet that is used four times be unit A of U501 in the first use, unit B in the " +
+      "second, and so on: KiCad then netlists one U501 with the right pins per use. Identify the symbol " +
+      "by uuid, or by reference (plus unit when several units of the part are placed in the file). " +
+      "Get instancePath from list_sheet_instances. For the sheet's first use the Reference field and " +
+      "the symbol's own unit follow, as KiCad writes them.",
+    {
+      schematicPath: z.string().describe("Path to the sheet .kicad_sch that contains the symbol"),
+      uuid: z.string().optional().describe("uuid of the placed symbol"),
+      reference: z
+        .string()
+        .optional()
+        .describe("Reference of the symbol (its field or any instance reference), if no uuid"),
+      unit: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          "With reference: the unit the symbol has at instancePath, to pick one of several",
+        ),
+      instancePath: z
+        .string()
+        .describe("Instance path from list_sheet_instances, e.g. '/<root uuid>/<sheet uuid>'"),
+      newReference: z.string().optional().describe("Reference in this use (e.g. U501)"),
+      newUnit: z.number().int().min(1).optional().describe("Unit in this use (1=A, 2=B, ...)"),
+    },
+    async (args: {
+      schematicPath: string;
+      uuid?: string;
+      reference?: string;
+      unit?: number;
+      instancePath: string;
+      newReference?: string;
+      newUnit?: number;
+    }) => {
+      const r = await callKicadScript("set_symbol_instance", args);
+      if (!r.success)
+        return {
+          content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }],
+          isError: true,
+        };
+      return { content: [{ type: "text", text: r.message }] };
     },
   );
 }

@@ -5,8 +5,8 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.2
-**Tools registered on the server:** 248
-**Tools indexed for keyword discovery:** 188 in 17 categories
+**Tools registered on the server:** 250
+**Tools indexed for keyword discovery:** 190 in 17 categories
 **Last updated:** 2026-10-24
 
 ## How to read this document
@@ -271,17 +271,19 @@ _Source: `src/tools/schematic-batch.ts`_
 
 ---
 
-## Hierarchical Sheets (5 tools)
+## Hierarchical Sheets (7 tools)
 
 _Source: `src/tools/schematic-hierarchy.ts`_
 
-| Tool                           | Description                                                                                                                              | Discovery             |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| `add_hierarchical_sheet`       | Insert a hierarchical-sheet reference block into a parent schematic, pointing at an existing sub-sheet file.                             | `schematic_hierarchy` |
-| `remove_hierarchical_sheet`    | Remove a hierarchical-sheet reference from a parent schematic (the reverse of add_hierarchical_sheet).                                   | `schematic_hierarchy` |
-| `set_sheet_property`           | Add/update a custom property on a hierarchical sheet (metadata, e.g. generator cell identity)                                            | `schematic_hierarchy` |
-| `get_sheet_properties`         | List hierarchical sheets with their full property maps                                                                                   | `schematic_hierarchy` |
-| `create_hierarchical_subsheet` | Create a new sub-sheet .kicad_sch file and link it into a parent schematic in a single call (create_schematic + add_hierarchical_sheet). | `schematic_hierarchy` |
+| Tool                           | Description                                                                                                                                   | Discovery             |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `add_hierarchical_sheet`       | Insert a hierarchical-sheet reference block into a parent schematic, pointing at an existing sub-sheet file.                                  | `schematic_hierarchy` |
+| `remove_hierarchical_sheet`    | Remove a hierarchical-sheet reference from a parent schematic (the reverse of add_hierarchical_sheet).                                        | `schematic_hierarchy` |
+| `set_sheet_property`           | Add/update a custom property on a hierarchical sheet (metadata, e.g. generator cell identity)                                                 | `schematic_hierarchy` |
+| `get_sheet_properties`         | List hierarchical sheets with their full property maps                                                                                        | `schematic_hierarchy` |
+| `create_hierarchical_subsheet` | Create a new sub-sheet .kicad_sch file and link it into a parent schematic in a single call (create_schematic + add_hierarchical_sheet).      | `schematic_hierarchy` |
+| `list_sheet_instances`         | List every sheet instance below a root schematic (reused sheets once per use) with its instance path, sheet name, file, page and parent path. | `schematic_hierarchy` |
+| `set_symbol_instance`          | Set the reference and/or unit a placed symbol has in one use of its sheet (e.g. units A-D of one quad op-amp across four sheet uses).         | `schematic_hierarchy` |
 
 ---
 
@@ -515,7 +517,7 @@ _Source: `src/tools/gui-driver.ts`_
 | `export.ts`              | Export and Fabrication Output          | 27      |
 | `schematic.ts`           | Schematic                              | 50      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
-| `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
+| `schematic-hierarchy.ts` | Hierarchical Sheets                    | 7       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
 | `validation.ts`          | File Validation                        | 2       |
 | `library.ts`             | Footprint Libraries and Library Tables | 7       |
@@ -532,11 +534,11 @@ _Source: `src/tools/gui-driver.ts`_
 | `router.ts`              | Tool Discovery                         | 3       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
-| **Total**                |                                        | **248** |
+| **Total**                |                                        | **250** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 188 of the 248 registered tools.
+These are the categories `search_tools` searches. They cover 190 of the 250 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -548,7 +550,7 @@ These are the categories `search_tools` searches. They cover 188 of the 248 regi
 | `library`                  | 7             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
-| `schematic_hierarchy`      | 5             |
+| `schematic_hierarchy`      | 7             |
 | `schematic_layout`         | 5             |
 | `schematic_batch`          | 6             |
 | `routing`                  | 3             |
@@ -557,6 +559,6 @@ These are the categories `search_tools` searches. They cover 188 of the 248 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **188**       |
+| **Indexed total**          | **190**       |
 | Registered but not indexed | 60            |
-| **Registered total**       | **248**       |
+| **Registered total**       | **250**       |

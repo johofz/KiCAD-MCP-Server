@@ -509,3 +509,200 @@ def annotate_sheet(sheet: Path) -> List[Dict[str, Any]]:
             text = text[:start] + block + text[end:]
         write_text_atomic(sheet, text, newline)
     return annotated
+
+
+# --------------------------------------------------------------------------- #
+# Per-instance reference and unit (set_symbol_instance)
+# --------------------------------------------------------------------------- #
+#
+# A sheet used four times holds each of its symbols once, with one (path ...)
+# entry per use. The entries carry their own (unit N) as well as their own
+# reference, so one quad op-amp symbol on a sheet that is used four times can
+# be unit A of U501 in the first use, unit B in the second, and so on: four
+# uses, one package. KiCad reads the unit from the entry for the sheet being
+# shown, netlisted or annotated; the symbol's own (unit N) and its Reference
+# field are what it writes for the first use.
+
+_SYMBOL_UNIT = re.compile(r"\(unit\s+(\d+)\s*\)")
+
+
+def _project_span(block: str, project: str) -> Optional[Tuple[int, int, int]]:
+    """``(instances start, project start, project end)`` in *block* for *project*.
+
+    Matches the project name exactly: KiCad ignores instance data filed under
+    another project's name, so editing that block would change nothing. The
+    project start/end are -1 when the symbol has (instances ...) but no entry
+    for *project*; None when it has no (instances ...) at all.
+    """
+    for inst in iter_child_offsets(block):
+        if not _INSTANCES_HEAD.match(block, inst):
+            continue
+        inst_end = match_paren(block, inst)
+        inst_block = block[inst : inst_end + 1]
+        for offset in iter_child_offsets(inst_block):
+            m = _PROJECT_HEAD.match(inst_block, offset)
+            if m and unescape_sexpr_string(m.group(1)) == project:
+                return inst, inst + offset, inst + match_paren(inst_block, offset) + 1
+        return inst, -1, -1
+    return None
+
+
+def _set_entry_fields(entry: str, reference: Optional[str], unit: Optional[int]) -> str:
+    """*entry* (a ``(path ...)`` block) with its reference and/or unit replaced."""
+    if reference is not None:
+        token = f'(reference "{escape_sexpr_string(reference)}")'
+        if _REFERENCE.search(entry):
+            entry = _replace_first(_REFERENCE, entry, token)
+        else:
+            entry = entry[:-1].rstrip() + " " + token + ")"
+    if unit is not None:
+        if _UNIT.search(entry):
+            entry = _replace_first(_UNIT, entry, f"(unit {int(unit)})")
+        else:
+            entry = entry[:-1].rstrip() + f" (unit {int(unit)}))"
+    return entry
+
+
+def _top_level_unit_span(block: str) -> Optional[Tuple[int, int]]:
+    """Span of the symbol's own ``(unit N)`` child (not an instance entry's)."""
+    for child in iter_child_offsets(block):
+        m = _SYMBOL_UNIT.match(block, child)
+        if m:
+            return m.start(), m.end()
+    return None
+
+
+def set_symbol_instance(
+    sheet: Path,
+    instance_path: str,
+    uuid: Optional[str] = None,
+    reference: Optional[str] = None,
+    unit: Optional[int] = None,
+    new_reference: Optional[str] = None,
+    new_unit: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Set the reference and/or unit one placed symbol has in one sheet use.
+
+    The symbol is picked by *uuid*, or by *reference* (its Reference field or
+    any of its instance references) with *unit* to choose between several
+    placed units of one part: the unit it has at *instance_path*, else its
+    own ``(unit N)``. The ``(path "<instance_path>" ...)`` entry under this
+    project is edited, or created when missing (it then takes *new_reference*
+    or the symbol's current reference, and *new_unit* or its own unit). When
+    *instance_path* is the sheet's first use, the Reference field and the
+    symbol's own ``(unit N)`` follow, since KiCad writes those for the first
+    use. Raises ValueError when the symbol or the path cannot be resolved.
+    """
+    sheet = Path(sheet)
+    if new_reference is None and new_unit is None:
+        raise ValueError("Nothing to change: give newReference and/or newUnit")
+    if new_unit is not None and int(new_unit) < 1:
+        raise ValueError("newUnit must be >= 1")
+    root, paths = instance_paths(sheet)
+    if root is not None and instance_path not in paths:
+        raise ValueError(
+            f"instancePath {instance_path!r} is not a use of {sheet.name}; "
+            f"its uses are: {', '.join(paths)}"
+        )
+    project = project_name(sheet)
+    text, newline = read_text_preserve_newline(sheet)
+    parts = [_read_part(text, start, end, project) for start, end in _placed_symbols(text)]
+
+    def unit_at_path(part: _Part) -> str:
+        for entry in part.entries:
+            if entry.path == instance_path:
+                return entry.unit
+        return part.unit
+
+    if uuid:
+        candidates = [p for p in parts if p.uuid == uuid]
+    elif reference:
+        candidates = [
+            p
+            for p in parts
+            if p.field == reference or any(e.reference == reference for e in p.entries)
+        ]
+        if unit is not None:
+            candidates = [p for p in candidates if unit_at_path(p) == str(int(unit))]
+    else:
+        raise ValueError("Give uuid, or reference (with unit to pick one of several units)")
+    if not candidates:
+        what = f"uuid {uuid}" if uuid else f"reference {reference}"
+        raise ValueError(f"No placed symbol with {what} in {sheet.name}")
+    if len(candidates) > 1:
+        listing = ", ".join(f"{p.uuid} (unit {unit_at_path(p)})" for p in candidates)
+        raise ValueError(
+            f"{len(candidates)} placed symbols match {reference}: {listing}; "
+            "pass unit or uuid to pick one"
+        )
+    part = candidates[0]
+    block = text[part.start : part.end]
+
+    current = next((e for e in part.entries if e.path == instance_path), None)
+    old_reference = current.reference if current else _base_reference(part.entries, paths, block)
+    old_unit = current.unit if current else part.unit
+    final_reference = new_reference if new_reference is not None else old_reference
+    final_unit = str(int(new_unit)) if new_unit is not None else old_unit
+
+    span = _project_span(block, project)
+    entry_text = (
+        f'(path "{escape_sexpr_string(instance_path)}" '
+        f'(reference "{escape_sexpr_string(final_reference)}") (unit {final_unit}))'
+    )
+    created = False
+    if span is None:
+        # No instance data at all: add an (instances ...) block of our own.
+        close = block.rstrip().rfind(")")
+        insertion = f'\n    (instances (project "{escape_sexpr_string(project)}" {entry_text}))\n  '
+        block = block[:close].rstrip() + insertion + block[close:]
+        created = True
+    else:
+        inst_start, proj_start, proj_end = span
+        if proj_start == -1:
+            inst_end = match_paren(block, inst_start)
+            addition = f' (project "{escape_sexpr_string(project)}" {entry_text})'
+            block = block[:inst_end].rstrip() + addition + block[inst_end:]
+            created = True
+        else:
+            project_block = block[proj_start:proj_end]
+            entries = [e for e in part.entries if proj_start <= e.start < proj_end]
+            target = next((e for e in entries if e.path == instance_path), None)
+            if target is not None:
+                edited = _set_entry_fields(
+                    block[target.start : target.end],
+                    new_reference,
+                    int(new_unit) if new_unit is not None else None,
+                )
+                block = block[: target.start] + edited + block[target.end :]
+            elif entries:
+                block = _with_entries(
+                    block, entries, [(instance_path, final_reference, final_unit)]
+                )
+                created = True
+            else:
+                close = proj_start + len(project_block) - 1
+                block = block[:close].rstrip() + " " + entry_text + block[close:]
+                created = True
+
+    first_use = not paths or instance_path == paths[0]
+    if first_use:
+        if new_reference is not None:
+            token = f'(property "Reference" "{escape_sexpr_string(new_reference)}"'
+            block = _replace_first(_REFERENCE_FIELD, block, token)
+        if new_unit is not None:
+            unit_span = _top_level_unit_span(block)
+            if unit_span is not None:
+                block = block[: unit_span[0]] + f"(unit {int(new_unit)})" + block[unit_span[1] :]
+
+    text = text[: part.start] + block + text[part.end :]
+    write_text_atomic(sheet, text, newline)
+    return {
+        "uuid": part.uuid,
+        "instancePath": instance_path,
+        "oldReference": old_reference,
+        "reference": final_reference,
+        "oldUnit": int(old_unit),
+        "unit": int(final_unit),
+        "created": created,
+        "firstUse": first_use,
+    }

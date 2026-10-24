@@ -15,6 +15,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   around functional groups (dashed by default) and bordered or borderless text
   boxes. A borderless text box gets KiCad's own encoding, a stroke width of
   -1 internal unit (`-0.0001`).
+- **`list_sheet_instances`, `set_symbol_instance`.** The first lists every use
+  of every sheet below a root (reused sheets once per use) with the instance
+  path symbols use, the sheet name, file, page and parent path. The second sets
+  the reference and/or unit a symbol has in one use, so one quad op-amp symbol
+  on a sheet used four times can be units A-D of one U501; kicad-cli 9
+  netlists that as one part with the right pins in each use.
 
 ### Improvements
 

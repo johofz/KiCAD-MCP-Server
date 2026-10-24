@@ -3,7 +3,7 @@
 Added in: v2.1.0, expanded through v2.7.0
 Contributors: @Mehanik (PRs #60, #66), @Kletternaut (PR #57), @karu2003 (v2.7.0)
 
-`src/tools/schematic.ts` registers 50 schematic tools; another 19 live in
+`src/tools/schematic.ts` registers 50 schematic tools; another 21 live in
 `schematic-batch.ts`, `schematic-hierarchy.ts` and `schematic-layout.ts`. This
 document covers the ones that need more explanation than a one-line summary. For
 the full list, see the generated [Tool Inventory](TOOL_INVENTORY.md).
@@ -500,6 +500,60 @@ border".
 | border        | boolean      | No       | Draw the border (default: true)                 |
 | bold          | boolean      | No       | Bold text (default: false)                      |
 | justify       | string       | No       | `left` \| `center` \| `right` (default: `left`) |
+
+## Sheet Instances and Per-Instance Units (2 tools)
+
+These live in `schematic-hierarchy.ts`. KiCad records a placed symbol's
+reference **and unit** once per use of its sheet, in
+`(instances (project "<name>" (path "<instance path>" (reference "U501") (unit 2))))`.
+So one quad op-amp symbol on a sheet that is used four times can be unit A of
+U501 in the first use, unit B in the second, and so on; kicad-cli 9 then
+netlists one U501 with the pins of unit A on the first channel's nets, unit B's
+on the second's, etc. (checked by `tests/test_sheet_instances_and_units.py`).
+
+### list_sheet_instances
+
+List every sheet instance below a root schematic, recursively, root included.
+A sheet placed four times is listed four times, depth first in the order the
+blocks appear in their parents.
+
+| Parameter     | Type   | Required | Description                   |
+| ------------- | ------ | -------- | ----------------------------- |
+| schematicPath | string | Yes      | The project's ROOT .kicad_sch |
+
+**Response (per entry in `instances`):**
+
+| Field      | Description                                                                                              |
+| ---------- | -------------------------------------------------------------------------------------------------------- |
+| path       | Instance path as symbol `(instances ...)` entries use it: `/<root uuid>`, `/<root uuid>/<block uuid>`, … |
+| sheetName  | The block's Sheetname (`""` for the root)                                                                |
+| file       | Sheetfile as written in the parent block (the root's own file name)                                      |
+| filePath   | Absolute path of that file                                                                               |
+| page       | Page number of this instance (from the parent block's `(instances ...)`; KiCad 6 root pages as fallback) |
+| parentPath | Instance path of the parent (`null` for the root)                                                        |
+
+### set_symbol_instance
+
+Set the reference and/or unit one placed symbol has in **one** use of its
+sheet. The `(path "<instancePath>" ...)` entry under the project is edited, or
+created when missing. When `instancePath` is the sheet's first use, the
+Reference field and the symbol's own `(unit N)` follow, since KiCad writes
+those for the first use.
+
+| Parameter     | Type   | Required | Description                                                                       |
+| ------------- | ------ | -------- | --------------------------------------------------------------------------------- |
+| schematicPath | string | Yes      | The sheet file that contains the symbol                                           |
+| uuid          | string | One of   | uuid of the placed symbol                                                         |
+| reference     | string | One of   | Its Reference field or any of its instance references                             |
+| unit          | number | No       | With `reference`: the unit it has at `instancePath`, to pick one of several units |
+| instancePath  | string | Yes      | From `list_sheet_instances`; must be a use of this sheet                          |
+| newReference  | string | No\*     | Reference in this use                                                             |
+| newUnit       | number | No\*     | Unit in this use (1=A, 2=B, …)                                                    |
+
+\* at least one of `newReference` / `newUnit`.
+
+**Response:** `uuid`, `instancePath`, `oldReference`, `reference`, `oldUnit`,
+`unit`, `created` (the entry was added), `firstUse`.
 
 ## Schematic Creation and Export (6 tools)
 

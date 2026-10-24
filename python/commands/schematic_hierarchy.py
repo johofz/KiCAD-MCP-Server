@@ -5,6 +5,8 @@ Tools:
   - add_hierarchical_sheet:       insert a hierarchical-sheet reference into a parent schematic
   - remove_hierarchical_sheet:    remove a hierarchical-sheet reference (reverse of add)
   - create_hierarchical_subsheet: create a sub-sheet file and link it in one call
+  - list_sheet_instances:         every use of every sheet, with instance path and page
+  - set_symbol_instance:          a symbol's reference/unit in one use of its sheet
 
 The command class holds a back-reference to KiCADInterface so it can reuse the existing
 create_schematic handler. fix_subsheet_instances gives the symbols of a newly linked sheet
@@ -18,8 +20,14 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from utils.sexpr_format import QUOTED_VALUE, escape_sexpr_string, unescape_sexpr_string
-from utils.sheet_tree import instance_paths, project_name, sheet_tree, sub_sheets
-from utils.symbol_instances import add_missing_instances
+from utils.sheet_tree import (
+    instance_paths,
+    project_name,
+    sheet_instances,
+    sheet_tree,
+    sub_sheets,
+)
+from utils.symbol_instances import add_missing_instances, set_symbol_instance
 
 logger = logging.getLogger("kicad_interface")
 
@@ -530,6 +538,101 @@ class SchematicHierarchyCommands:
             return {"success": True, "sheets": sheets, "count": len(sheets)}
         except Exception as e:
             logger.error(f"Error getting sheet properties: {e}")
+            return {"success": False, "message": str(e)}
+
+    def list_sheet_instances(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List every use of every sheet in the hierarchy below a root schematic.
+
+        A sheet placed four times appears four times, each with the instance
+        path that symbol (instances ...) entries use and its own page number.
+        """
+        logger.info("Listing sheet instances")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            root = Path(schematic_path)
+            if not root.is_file():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            instances = [
+                {
+                    "path": inst.path,
+                    "sheetName": inst.sheet_name,
+                    "file": inst.file,
+                    "filePath": str(inst.file_path),
+                    "page": inst.page,
+                    "parentPath": inst.parent_path,
+                }
+                for inst in sheet_instances(root)
+            ]
+            return {"success": True, "instances": instances, "count": len(instances)}
+        except Exception as e:
+            logger.error(f"Error listing sheet instances: {e}")
+            return {"success": False, "message": str(e)}
+
+    def set_symbol_instance(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set a placed symbol's reference and/or unit in one use of its sheet.
+
+        Lets one quad op-amp symbol on a sheet used four times be unit A of
+        U501 in the first use, unit B in the second, and so on.
+        """
+        logger.info("Setting symbol instance")
+        try:
+            schematic_path = params.get("schematicPath")
+            symbol_uuid = params.get("uuid")
+            reference = params.get("reference")
+            unit = params.get("unit")
+            instance_path = params.get("instancePath")
+            new_reference = params.get("newReference")
+            new_unit = params.get("newUnit")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not symbol_uuid and not reference:
+                return {"success": False, "message": "uuid or reference is required"}
+            if not instance_path or not str(instance_path).startswith("/"):
+                return {
+                    "success": False,
+                    "message": "instancePath is required (a path from list_sheet_instances)",
+                }
+            if new_reference is None and new_unit is None:
+                return {"success": False, "message": "newReference and/or newUnit is required"}
+            if new_reference is not None and (
+                not isinstance(new_reference, str) or not new_reference.strip()
+            ):
+                return {"success": False, "message": "newReference must be a non-empty string"}
+            for key, value in (("unit", unit), ("newUnit", new_unit)):
+                if value is not None and (
+                    isinstance(value, bool) or not isinstance(value, int) or value < 1
+                ):
+                    return {"success": False, "message": f"{key} must be an integer >= 1"}
+            sheet = Path(schematic_path)
+            if not sheet.is_file():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            try:
+                result = set_symbol_instance(
+                    sheet,
+                    str(instance_path),
+                    uuid=symbol_uuid,
+                    reference=reference,
+                    unit=unit,
+                    new_reference=new_reference,
+                    new_unit=new_unit,
+                )
+            except ValueError as ve:
+                return {"success": False, "message": str(ve)}
+            return {
+                "success": True,
+                "message": (
+                    f"{result['reference']} unit {result['unit']} at {result['instancePath']}"
+                    + (" (entry created)" if result["created"] else "")
+                ),
+                **result,
+            }
+        except Exception as e:
+            logger.error(f"Error setting symbol instance: {e}")
             return {"success": False, "message": str(e)}
 
     def fix_subsheet_instances(self, parent_path: str, parent_content: str) -> List[str]:

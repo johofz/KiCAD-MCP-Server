@@ -23,11 +23,11 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 248 tools registered, 188 of them indexed for keyword discovery
-- 188 tools across 17 categories with JSON Schema validation
+- 250 tools registered, 190 of them indexed for keyword discovery
+- 190 tools across 17 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - 23 dynamic resources exposing project state
-- Complete schematic workflow with 69 tools (authoring, batch edits, hierarchy, layout) and dynamic symbol loading (~10,000 symbols)
+- Complete schematic workflow with 71 tools (authoring, batch edits, hierarchy, layout) and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
 - Custom footprint and symbol creation tools
 - JLCPCB parts integration with 2.5M+ component catalog and local library search
@@ -623,7 +623,7 @@ keyword instead of guessing:
 
 - **32 essential tools** that `search_tools` surfaces first, covering the
   operations nearly every session needs
-- **188 tools indexed across 17 categories** (board, component, export, drc,
+- **190 tools indexed across 17 categories** (board, component, export, drc,
   schematic, library, symbol_library, symbol_pins, schematic_hierarchy,
   schematic_layout, schematic_batch, routing, autoroute, validation,
   parts-registry, digikey, gui-driver)
@@ -702,10 +702,10 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **188 tools** are additionally indexed into 17 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **190 tools** are additionally indexed into 17 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
 The lists below are a curated tour of the most useful tools, not the full set.
-For the complete, generated reference of all 248 tools -- including how each one
+For the complete, generated reference of all 250 tools -- including how each one
 is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
 ### Project Management (12 tools)
@@ -1667,8 +1667,8 @@ How many Basic parts are available?
 
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (248), Resources (23)
-- **Tool discovery:** keyword search catalogue indexing 188 tools in 17 categories
+- **Capabilities:** Tools (250), Resources (23)
+- **Tool discovery:** keyword search catalogue indexing 190 tools in 17 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -1818,7 +1818,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (248 tools):**
+**Working Features (250 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
