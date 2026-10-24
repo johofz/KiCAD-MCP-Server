@@ -192,8 +192,12 @@ class TestAddSchematicWireSnapReport:
         assert "snapTolerance" in warning
         assert warning in result["message"]
 
-        # The file got exactly what the response describes.
-        assert _wires(self.path) == [[[100.0, 93.19], [100.0, 103.81]]]
+        # The file got what the response describes. The wire runs over pin 1,
+        # so it is split there and the pin connects, as eeschema does.
+        assert _wires(self.path) == [
+            [[100.0, 93.19], [100.0, 96.19]],
+            [[100.0, 96.19], [100.0, 103.81]],
+        ]
 
     def test_both_endpoints_snapped_carries_no_warning(self):
         result = self.iface._handle_add_schematic_wire(

@@ -230,6 +230,8 @@ class WireManager:
             sch_data.insert(sheet_instances_index, wire_sexp)
             logger.info(f"Injected wire from {start_point} to {end_point}")
 
+            # The new wire may pass over pins or the ends of other wires.
+            WireManager.break_wires_at_connection_points(sch_data)
             WireManager.sync_junctions(sch_data)
 
             # Write back
@@ -310,6 +312,7 @@ class WireManager:
                 f"Injected {len(wire_sexps)} wire segments for {len(points)}-point polyline"
             )
 
+            WireManager.break_wires_at_connection_points(sch_data)
             WireManager.sync_junctions(sch_data)
 
             # Write back
@@ -504,6 +507,42 @@ class WireManager:
                     i += 2  # skip the two new segments
                     continue
             i += 1
+        return splits
+
+    @staticmethod
+    def break_wires_at_connection_points(sch_data: list) -> int:
+        """Split wires at every pin and wire endpoint that lies strictly inside them.
+
+        KiCad connects wires only at their end points: a pin or the end of
+        another wire sitting in the middle of a wire stays unconnected ("Pin not
+        connected", "Unconnected wire endpoint"). eeschema avoids this by
+        breaking segments when a wire is drawn or a symbol is placed
+        (SCH_LINE_WIRE_BUS_TOOL::BreakSegments); this does the same for the
+        whole sheet. Returns the number of splits.
+        """
+        points = set()
+        for x, y in WireManager._collect_wire_endpoints(sch_data):
+            points.add((round(x * _IU_PER_MM), round(y * _IU_PER_MM)))
+        for x, y in WireManager._collect_pin_positions(sch_data):
+            points.add((round(x * _IU_PER_MM), round(y * _IU_PER_MM)))
+        splits = 0
+        for iu_x, iu_y in sorted(points):
+            splits += WireManager._break_wires_at_point(
+                sch_data, [iu_x / _IU_PER_MM, iu_y / _IU_PER_MM]
+            )
+        return splits
+
+    @staticmethod
+    def connect_placed_pins(schematic_path: Path) -> int:
+        """Break wires under newly placed pins and refresh junctions (file in place)."""
+        with open(schematic_path, "r", encoding="utf-8") as f:
+            sch_data = sexpdata.loads(f.read())
+        splits = WireManager.break_wires_at_connection_points(sch_data)
+        added, removed = WireManager.sync_junctions(sch_data)
+        if splits or added or removed:
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(kicad_dumps(sch_data))
+            logger.info(f"connect_placed_pins: {splits} split(s), junctions +{added}/-{removed}")
         return splits
 
     @staticmethod
@@ -744,14 +783,14 @@ class WireManager:
         added = 0
         if to_add:
             if sheet_instances_index is None:
-                logger.warning("sync_junctions: no sheet_instances found, skipping junction insert")
-            else:
-                for iu_x, iu_y in to_add:
-                    x = iu_x / _IU_PER_MM
-                    y = iu_y / _IU_PER_MM
-                    sch_data.insert(sheet_instances_index, WireManager._make_junction_sexp(x, y))
-                    sheet_instances_index += 1
-                    added += 1
+                # Sub-sheets have no (sheet_instances) block: append at the end.
+                sheet_instances_index = len(sch_data)
+            for iu_x, iu_y in sorted(to_add):
+                x = iu_x / _IU_PER_MM
+                y = iu_y / _IU_PER_MM
+                sch_data.insert(sheet_instances_index, WireManager._make_junction_sexp(x, y))
+                sheet_instances_index += 1
+                added += 1
 
         if added or removed:
             logger.info(f"sync_junctions: added {added}, removed {removed}")

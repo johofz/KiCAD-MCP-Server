@@ -313,6 +313,10 @@ class SchematicHandlersMixin:
                 mirror_x=mirror_x,
                 project_path=derived_project_path,
             )
+            # A pin placed on an existing wire must split it to connect.
+            from commands.wire_manager import WireManager
+
+            WireManager.connect_placed_pins(schematic_file)
 
             self._reload_kicad_schematic()
 
