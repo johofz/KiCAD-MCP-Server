@@ -328,7 +328,7 @@ class TestAddSheetPin:
 
         assert result["success"] is False
 
-    def test_orientation_180_uses_right_justify(self, iface, tmp_path):
+    def test_left_edge_pin_text_reads_into_the_sheet(self, iface, tmp_path):
         sch = tmp_path / "parent.kicad_sch"
         sch.write_text(_MINIMAL_PARENT)
 
@@ -346,6 +346,28 @@ class TestAddSheetPin:
         assert result["success"] is True
         content = sch.read_text()
         assert "(at 100 60 180)" in content
+        # Left edge (180): the name sits inside the box, as eeschema writes it.
+        assert "(justify left)" in content
+
+    def test_right_edge_pin_text_reads_into_the_sheet(self, iface, tmp_path):
+        sch = tmp_path / "parent.kicad_sch"
+        sch.write_text(_MINIMAL_PARENT)
+
+        result = iface._handle_add_sheet_pin(
+            {
+                "schematicPath": str(sch),
+                "sheetName": "Storage",
+                "pinName": "VBUS",
+                "pinType": "input",
+                "position": [140, 60],
+                "orientation": 0,
+            }
+        )
+
+        assert result["success"] is True
+        content = sch.read_text()
+        assert "(at 140 60 0)" in content
+        # Right edge (0): the name sits inside the box, as eeschema writes it.
         assert "(justify right)" in content
 
     def test_finds_sheet_that_does_not_start_a_line(self, iface, tmp_path):
