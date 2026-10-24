@@ -18,7 +18,25 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
       property: z.enum(["Reference", "Value"]).describe("Which field to move"),
       x: z.number().describe("New X position in mm (absolute schematic coordinate)"),
       y: z.number().describe("New Y position in mm (absolute schematic coordinate)"),
-      angle: z.number().optional().default(0).describe("Text angle in degrees (default 0)"),
+      angle: z
+        .number()
+        .optional()
+        .default(0)
+        .describe(
+          "Text angle in degrees as stored (default 0). eeschema turns it with the symbol, so prefer 'orientation'",
+        ),
+      orientation: z
+        .enum(["horizontal", "vertical"])
+        .optional()
+        .describe(
+          "How the text reads on the sheet; converted for the symbol's rotation. Overrides 'angle'",
+        ),
+      justify: z
+        .enum(["left", "right", "center"])
+        .optional()
+        .describe(
+          "Horizontal alignment on the sheet relative to (x, y); converted for the symbol's rotation and mirroring. Default: keep the field's current justification",
+        ),
       visible: z
         .boolean()
         .optional()
@@ -41,7 +59,7 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
   // Move many fields in one file read/write
   server.tool(
     "batch_set_schematic_property_positions",
-    "Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls. Pass an 'updates' array; each item is {reference, property:'Reference'|'Value', x, y, angle?, visible?}. Returns per-item applied/failed lists.",
+    "Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls. Pass an 'updates' array; each item is {reference, property:'Reference'|'Value', x, y, angle?, orientation?, justify?, visible?} (orientation and justify as on the sheet, see set_schematic_property_position). Returns per-item applied/failed lists.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       updates: z
@@ -52,6 +70,8 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
             x: z.number(),
             y: z.number(),
             angle: z.number().optional().default(0),
+            orientation: z.enum(["horizontal", "vertical"]).optional(),
+            justify: z.enum(["left", "right", "center"]).optional(),
             visible: z.boolean().optional().default(true),
           }),
         )

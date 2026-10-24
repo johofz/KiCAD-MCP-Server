@@ -158,7 +158,14 @@ class SchematicFieldLayoutCommands:
 
             old_pos = _extract_property_position(block_text, property_name)
             new_block, n_subs = _move_property_in_block(
-                block_text, property_name, x, y, angle, visible
+                block_text,
+                property_name,
+                x,
+                y,
+                angle,
+                visible,
+                justify=params.get("justify"),
+                orientation=params.get("orientation"),
             )
             if n_subs == 0:
                 return {
@@ -242,7 +249,14 @@ class SchematicFieldLayoutCommands:
                     continue
 
                 new_block, n_subs = _move_property_in_block(
-                    block_text, property_name, x, y, angle, visible
+                    block_text,
+                    property_name,
+                    x,
+                    y,
+                    angle,
+                    visible,
+                    justify=upd.get("justify"),
+                    orientation=upd.get("orientation"),
                 )
                 if n_subs == 0:
                     failed.append(
