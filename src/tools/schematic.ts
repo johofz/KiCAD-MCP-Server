@@ -1284,17 +1284,52 @@ edit_schematic_component and set its value to an empty string.`,
     "annotate_schematic",
     "Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references. " +
       "Numbers are unique across the whole project, each use of a sheet that is placed more than once gets its own, " +
-      "and the units of a multi-unit part share one.",
+      "and the units of a multi-unit part share one. " +
+      "scheme 'sheet_x100' numbers per page instead: on page P each prefix counts P*100+1, P*100+2, … " +
+      "(R501, C501 on page 5; #PWR501 too), ordered top-to-bottom then left-to-right; a multi-unit part " +
+      "gets one reference, on the lowest page holding one of its units. reset=true re-annotates every " +
+      "symbol instead of only '?' ones. With sheet_x100 or reset the whole project (from its root) is " +
+      "annotated and the full mapping [{instancePath, uuid, unit, oldReference, newReference}] is returned.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      scheme: z
+        .enum(["sequential", "sheet_x100"])
+        .optional()
+        .describe("Numbering scheme (default: sequential, the previous behaviour)"),
+      reset: z
+        .boolean()
+        .optional()
+        .describe("Re-annotate everything, not only references ending in '?' (default: false)"),
     },
-    async (args: { schematicPath: string }) => {
+    async (args: {
+      schematicPath: string;
+      scheme?: "sequential" | "sheet_x100";
+      reset?: boolean;
+    }) => {
       const result = await callKicadScript("annotate_schematic", args);
       if (result.success) {
         const annotated = result.annotated || [];
         if (annotated.length === 0) {
           return {
             content: [{ type: "text", text: "All components are already annotated." }],
+          };
+        }
+        if (result.scheme !== undefined) {
+          // Whole-project mode: one line per symbol use.
+          const lines = annotated.map(
+            (a: any) =>
+              `  ${a.oldReference} → ${a.newReference} (unit ${a.unit}, ${a.instancePath})`,
+          );
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `Annotated ${annotated.length} symbol use(s), ${result.changed} changed ` +
+                  `(scheme ${result.scheme}${result.reset ? ", reset" : ""}):\n${lines.join("\n")}\n\n` +
+                  JSON.stringify(annotated),
+              },
+            ],
           };
         }
         // A sheet used more than once gives the part a reference per use (#432).

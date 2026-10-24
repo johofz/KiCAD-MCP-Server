@@ -193,9 +193,36 @@ Rotate a placed symbol in the schematic.
 
 Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references.
 
-| Parameter     | Type   | Required | Description                 |
-| ------------- | ------ | -------- | --------------------------- |
-| schematicPath | string | Yes      | Path to the .kicad_sch file |
+| Parameter     | Type    | Required | Description                                                                  |
+| ------------- | ------- | -------- | ---------------------------------------------------------------------------- |
+| schematicPath | string  | Yes      | Path to the .kicad_sch file                                                  |
+| scheme        | enum    | No       | `sequential` (default, the previous behaviour) \| `sheet_x100`               |
+| reset         | boolean | No       | Re-annotate every symbol, not only references ending in `?` (default: false) |
+
+**Default** (`sequential`, no reset): only the given sheet's `R?` symbols are
+numbered, with numbers unique across the project; each use of a reused sheet
+gets its own, and the units of a multi-unit part share one.
+
+**`scheme: "sheet_x100"` or `reset: true`** annotate the **whole project**
+below its root (found from `schematicPath`), like KiCad's "Annotate entire
+schematic":
+
+- `sheet_x100`: on page P every prefix counts P×100+1, P×100+2, … (R501, R502,
+  C501 on page 5; R1001 on page 10). Power and flag symbols too (#PWR501).
+  `sequential` counts 1, 2, 3, … over the project, power symbols with KiCad's
+  leading zero (#PWR01).
+- Order: page, then top-to-bottom, then left-to-right.
+- Symbols that share one reference with different units (in any sheet use)
+  stay ONE part with one new reference, numbered on the lowest page that holds
+  one of its units. That includes one symbol set to units A–D in four uses of
+  its sheet (`set_symbol_instance`). Two symbols with the same reference and
+  the same unit are two parts.
+- Each use of a reused sheet gets its own references.
+- Without `reset`, existing numbers are kept and new ones avoid them.
+
+The response then carries `scheme`, `reset`, `changed` and the full mapping
+`annotated: [{instancePath, uuid, unit, oldReference, newReference, file}]`,
+one item per numbered symbol use.
 
 ## Wiring and Connections (9 tools)
 

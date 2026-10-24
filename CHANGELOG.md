@@ -29,6 +29,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   since KiCad never writes two mirror tokens. A kicad-cli netlist test wires a
   mirrored op-amp unit through `connect_to_net` at all four rotations and
   checks every label lands on its pin.
+- **`annotate_schematic` takes `scheme` and `reset`.** `scheme: "sheet_x100"`
+  numbers the parts on page P as P*100+1, P*100+2, ... per prefix (R501, C501,
+  #PWR501 on page 5), ordered top-to-bottom then left-to-right, each use of a
+  reused sheet on its own page. Units that share a reference stay one part,
+  numbered on the lowest page that holds one of them. `reset: true` numbers
+  every symbol again. Both modes cover the whole project and return the full
+  mapping; the default call is unchanged.
 
 ### Bug Fixes
 

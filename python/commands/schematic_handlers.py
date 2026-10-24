@@ -32,7 +32,12 @@ from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
-from utils.symbol_instances import annotate_sheet, instance_report
+from utils.symbol_instances import (
+    ANNOTATION_SCHEMES,
+    annotate_hierarchy,
+    annotate_sheet,
+    instance_report,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -2257,6 +2262,10 @@ class SchematicHandlersMixin:
     def _handle_annotate_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Annotate unannotated components in schematic (R? -> R1, R2, ...)
 
+        With scheme "sheet_x100" or reset true, utils.symbol_instances.
+        annotate_hierarchy numbers the whole project instead (page-based
+        numbers, or everything again); the default keeps the behaviour below.
+
         utils.symbol_instances.annotate_sheet does the work. This used kicad-skip's
         setAllReferences, which wrote one number into every use of a sheet used
         more than once, and it took the used numbers from this file only, so a
@@ -2270,6 +2279,36 @@ class SchematicHandlersMixin:
                 return {"success": False, "message": "schematicPath is required"}
             if not Path(schematic_path).is_file():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            scheme = params.get("scheme", "sequential")
+            reset = params.get("reset", False)
+            if scheme not in ANNOTATION_SCHEMES:
+                return {
+                    "success": False,
+                    "message": f"scheme must be one of {', '.join(ANNOTATION_SCHEMES)}",
+                }
+            if not isinstance(reset, bool):
+                return {"success": False, "message": "reset must be true or false"}
+
+            if scheme != "sequential" or reset:
+                # Page-based numbering and re-numbering work on the whole
+                # project, as KiCad's "Annotate entire schematic" does.
+                try:
+                    mapping = annotate_hierarchy(Path(schematic_path), scheme=scheme, reset=reset)
+                except ValueError as ve:
+                    return {"success": False, "message": str(ve)}
+                changed = [m for m in mapping if m["oldReference"] != m["newReference"]]
+                return {
+                    "success": True,
+                    "scheme": scheme,
+                    "reset": reset,
+                    "annotated": mapping,
+                    "changed": len(changed),
+                    "message": (
+                        f"Numbered {len(mapping)} symbol use(s), {len(changed)} changed"
+                        if mapping
+                        else "All components already annotated"
+                    ),
+                }
 
             annotated = annotate_sheet(Path(schematic_path))
             if not annotated:
