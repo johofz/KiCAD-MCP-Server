@@ -58,6 +58,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   pins but were used as screen offsets: GND showed its name above the symbol,
   supply symbols below the arrow, capacitors had the value above the reference.
   Fields now take the same transform as pins.
+- **Placed symbols keep the library's BOM flags.** Placement always wrote
+  `(in_bom yes) (on_board yes) (exclude_from_sim no)`. Test points, solder
+  jumpers and mounting holes are `in_bom no` in KiCad's libraries, and their
+  footprints are excluded from the BOM, so DRC with schematic parity reported a
+  mismatch for every one of them.
 - **Sheet pin names read into the sheet.** `add_sheet_pin` wrote the
   justification the wrong way round, so names were drawn outside the sheet box
   over the wires.

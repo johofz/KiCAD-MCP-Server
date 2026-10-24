@@ -849,6 +849,29 @@ class DynamicSymbolLoader:
         except Exception:
             return []
 
+    def _lib_symbol_flags(self, content: str, full_lib_id: str) -> Dict[str, str]:
+        """exclude_from_sim / in_bom / on_board of an injected lib symbol ("yes"/"no").
+
+        Defaults to KiCad's (no, yes, yes) when the symbol or a flag is missing.
+        """
+        flags = {"exclude_from_sim": "no", "in_bom": "yes", "on_board": "yes"}
+        lib_start = content.find("(lib_symbols")
+        sym_start = (
+            content.find(f'(symbol "{escape_sexpr_string(full_lib_id)}"', lib_start)
+            if lib_start >= 0
+            else -1
+        )
+        if sym_start < 0:
+            return flags
+        head = self._extract_paren_block(content, sym_start)
+        # only the symbol's own flags, before its fields and sub-units
+        head = head[: head.find("(property")] if "(property" in head else head
+        for key in flags:
+            m = re.search(r"\(" + key + r"\s+(yes|no)\)", head)
+            if m:
+                flags[key] = m.group(1)
+        return flags
+
     def _extract_lib_property_value(
         self, schematic_path: Path, library_name: str, symbol_name: str, prop_name: str
     ) -> Optional[str]:
@@ -1089,13 +1112,20 @@ class DynamicSymbolLoader:
         # format version accepts them (#351). A KiCad 8 or 9 file never contains
         # them and those releases refuse a schematic carrying a token they do not
         # know. Everything else on this line is common to v8/v9/v10.
+        # The placed symbol starts with the library's flags, as eeschema does:
+        # test points, solder jumpers and mounting holes are (in_bom no), and a
+        # footprint with "exclude from BOM" otherwise fails the DRC parity check.
+        flags = self._lib_symbol_flags(content, full_lib_id)
+        sim, bom, board = flags["exclude_from_sim"], flags["in_bom"], flags["on_board"]
         if self._supports_kicad10_symbol_tokens(content):
             attrs_line = (
-                "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
+                f"    (body_style 1) (exclude_from_sim {sim}) (in_bom {bom}) (on_board {board})"
                 " (in_pos_files yes) (dnp no)\n"
             )
         else:
-            attrs_line = "    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)\n"
+            attrs_line = (
+                f"    (exclude_from_sim {sim}) (in_bom {bom}) (on_board {board}) (dnp no)\n"
+            )
 
         mirror_str = " (mirror x)" if mirror_x else (" (mirror y)" if mirror_y else "")
         instance_block = (
