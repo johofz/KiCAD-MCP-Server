@@ -224,7 +224,7 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic_hierarchy",
     description:
-      "Hierarchical schematic sheets: insert/remove a sheet, scaffold a sub-sheet, add hierarchical labels and sheet pins, read and write sheet properties",
+      "Hierarchical schematic sheets: insert/remove a sheet, scaffold a sub-sheet, add hierarchical labels and sheet pins, read and write sheet properties, list sheet instances, set a symbol's reference/unit per instance",
     tools: [
       "add_hierarchical_sheet",
       "remove_hierarchical_sheet",
@@ -233,6 +233,8 @@ export const toolCategories: ToolCategory[] = [
       "add_sheet_pin",
       "set_sheet_property",
       "get_sheet_properties",
+      "list_sheet_instances",
+      "set_symbol_instance",
     ],
   },
   {

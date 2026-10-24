@@ -316,3 +316,172 @@ def instance_paths(target: Path) -> Tuple[Optional[Path], List[str]]:
     info = sheet_info(target)
     own = info.uuid if info is not None else ""
     return None, [f"/{own}" if own else "/"]
+
+
+# --------------------------------------------------------------------------- #
+# Sheet instances with page numbers
+# --------------------------------------------------------------------------- #
+#
+# KiCad 7+ files a sheet's page number inside its (sheet ...) block, once per
+# use of the parent: (instances (project "<name>" (path "/<chain to the
+# parent>" (page "N")))). The root's own page is in its (sheet_instances
+# (path "/" (page "1"))). KiCad 6 kept every page in the root's
+# (sheet_instances ...) under paths without the root uuid ("/<block>/"), which
+# is read as a fallback.
+
+_INSTANCES_HEAD = re.compile(r"\(instances[\s(]")
+_SHEET_INSTANCES_HEAD = re.compile(r"\(sheet_instances[\s(]")
+_PROJECT_HEAD = re.compile(rf"\(project\s+{QUOTED_VALUE}")
+_PATH_HEAD = re.compile(rf"\(path\s+{QUOTED_VALUE}")
+_PAGE = re.compile(rf"\(page\s+{QUOTED_VALUE}\s*\)")
+
+
+class SheetInstance(NamedTuple):
+    """One use of a sheet in the hierarchy."""
+
+    #: Instance path as symbol (instances ...) entries use it: "/<root uuid>"
+    #: for the root, "/<root uuid>/<block uuid>[/...]" below it.
+    path: str
+    #: The block's Sheetname ("" for the root).
+    sheet_name: str
+    #: Sheetfile as written in the parent block (the root's own file name).
+    file: str
+    file_path: Path
+    page: str
+    #: Path of the parent instance; None for the root.
+    parent_path: Optional[str]
+
+
+def _pages_by_path(block: str, project: str) -> Dict[str, str]:
+    """``{parent path: page}`` from a (sheet ...) block's (instances ...)."""
+    for offset in iter_child_offsets(block):
+        if not _INSTANCES_HEAD.match(block, offset):
+            continue
+        inst = block[offset : match_paren(block, offset) + 1]
+        chosen = None
+        for p_offset in iter_child_offsets(inst):
+            m = _PROJECT_HEAD.match(inst, p_offset)
+            if not m:
+                continue
+            span = inst[p_offset : match_paren(inst, p_offset) + 1]
+            if unescape_sexpr_string(m.group(1)) == project:
+                chosen = span
+                break
+            if chosen is None:
+                chosen = span  # KiCad's own fallback: the first project
+        pages: Dict[str, str] = {}
+        if chosen is not None:
+            for e_offset in iter_child_offsets(chosen):
+                m = _PATH_HEAD.match(chosen, e_offset)
+                if not m:
+                    continue
+                entry = chosen[e_offset : match_paren(chosen, e_offset) + 1]
+                page = _PAGE.search(entry)
+                if page:
+                    pages[unescape_sexpr_string(m.group(1))] = unescape_sexpr_string(page.group(1))
+        return pages
+    return {}
+
+
+def _root_sheet_instance_pages(text: str) -> Dict[str, str]:
+    """``{path: page}`` from a root's (sheet_instances ...) block."""
+    for offset in iter_child_offsets(text):
+        if not _SHEET_INSTANCES_HEAD.match(text, offset):
+            continue
+        block = text[offset : match_paren(text, offset) + 1]
+        pages: Dict[str, str] = {}
+        for e_offset in iter_child_offsets(block):
+            m = _PATH_HEAD.match(block, e_offset)
+            if not m:
+                continue
+            entry = block[e_offset : match_paren(block, e_offset) + 1]
+            page = _PAGE.search(entry)
+            if page:
+                pages[unescape_sexpr_string(m.group(1))] = unescape_sexpr_string(page.group(1))
+        return pages
+    return {}
+
+
+def _sheet_blocks(text: str) -> List[Tuple[str, str, str, str]]:
+    """``(block uuid, Sheetname, Sheetfile, block text)`` per top-level sheet."""
+    found: List[Tuple[str, str, str, str]] = []
+    for offset in iter_child_offsets(text):
+        if not _SHEET_HEAD.match(text, offset):
+            continue
+        end = match_paren(text, offset)
+        if end == -1:
+            continue
+        block = text[offset : end + 1]
+        block_uuid = name = file_name = ""
+        for child in iter_child_offsets(block):
+            m = _UUID_HEAD.match(block, child)
+            if m:
+                block_uuid = m.group(1)
+                continue
+            m = _PROPERTY_HEAD.match(block, child)
+            if not m:
+                continue
+            key = unescape_sexpr_string(m.group(1))
+            if key in ("Sheetfile", "Sheet file"):
+                file_name = unescape_sexpr_string(m.group(2))
+            elif key in ("Sheetname", "Sheet name"):
+                name = unescape_sexpr_string(m.group(2))
+        if block_uuid and file_name:
+            found.append((block_uuid, name, file_name, block))
+    return found
+
+
+def sheet_instances(root: Path) -> List[SheetInstance]:
+    """Every use of every sheet reachable from *root*, root first.
+
+    Depth first, in the order the blocks appear in their parents, so a sheet
+    used four times is listed four times, each with its own path and page.
+    A block whose file is missing is still listed (its children cannot be).
+    A sheet that contains itself is not followed again.
+    """
+    root = Path(root)
+    text, _newline = read_text_preserve_newline(root)
+    root_uuid = sheet_uuid(text)
+    if not root_uuid:
+        raise ValueError(f"{root} has no (uuid ...); not a KiCad 6+ schematic")
+    project = project_name(root)
+    legacy = _root_sheet_instance_pages(text)
+    result: List[SheetInstance] = [
+        SheetInstance(
+            path=f"/{root_uuid}",
+            sheet_name="",
+            file=root.name,
+            file_path=root,
+            page=legacy.get("/", "1"),
+            parent_path=None,
+        )
+    ]
+
+    def walk(sheet: Path, sheet_text: str, path: str, chain: List[str], ancestors: Set[str]):
+        for block_uuid, name, file_name, block in _sheet_blocks(sheet_text):
+            child = sheet.parent / file_name
+            child_path = f"{path}/{block_uuid}"
+            pages = _pages_by_path(block, project)
+            # KiCad 6: "/<block>/.../" in the root's (sheet_instances ...).
+            page = pages.get(path) or legacy.get("/" + "/".join(chain + [block_uuid]) + "/", "")
+            result.append(
+                SheetInstance(
+                    path=child_path,
+                    sheet_name=name,
+                    file=file_name,
+                    file_path=child,
+                    page=page,
+                    parent_path=path,
+                )
+            )
+            key = _real_key(child)
+            if key in ancestors or not child.is_file():
+                continue
+            try:
+                child_text, _nl = read_text_preserve_newline(child)
+            except (OSError, UnicodeDecodeError):
+                continue
+            walk(child, child_text, child_path, chain + [block_uuid], ancestors | {key})
+
+    walk(root, text, f"/{root_uuid}", [], {_real_key(root)})
+    return result
