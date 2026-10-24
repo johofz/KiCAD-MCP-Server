@@ -156,8 +156,84 @@ def _apply_visibility(block: str, property_name: str, visible: bool) -> str:
     return block[:ps] + prop_sub + block[pe + 1 :]
 
 
-def _move_property_in_block(block_text, property_name, x, y, angle, visible) -> Tuple[str, int]:
-    """Replace a property's (at ...) and apply visibility. Returns (new_block, n_substitutions)."""
+def _symbol_orientation(block_text: str) -> Tuple[int, Optional[str]]:
+    """(rotation in degrees, mirror axis "x"/"y"/None) of a placed symbol block."""
+    m = re.search(
+        r"^\(symbol\s+\(lib_id\s+\"[^\"]*\"\)\s+\(at\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\)", block_text
+    )
+    rot = int(round(float(m.group(1)))) % 360 if m else 0
+    mm = re.search(r"\(mirror\s+([xy])\)", block_text[: block_text.find("(property")])
+    return rot, (mm.group(1) if mm else None)
+
+
+def _stored_field_angle(block_text: str, orientation: str) -> int:
+    """Field angle to store so the text reads *orientation* ("horizontal"/"vertical").
+
+    eeschema rotates field text with the symbol: a symbol turned by 90 or 270
+    degrees shows a 0-degree field vertically.
+    """
+    rot, _ = _symbol_orientation(block_text)
+    turned = rot in (90, 270)
+    return 90 if turned != (orientation == "vertical") else 0
+
+
+def _stored_field_justify(block_text: str, justify: str) -> str:
+    """Horizontal justification to store so the text appears *justify* on the sheet.
+
+    eeschema transforms field justification with the symbol: rotation by 90 or
+    180 degrees and a mirror about the Y axis each swap left and right
+    (checked against kicad-cli 9 renders).
+    """
+    if justify not in ("left", "right"):
+        return justify
+    rot, mirror = _symbol_orientation(block_text)
+    flipped = (rot in (90, 180)) != (mirror == "y")
+    if not flipped:
+        return justify
+    return "right" if justify == "left" else "left"
+
+
+def _apply_justify(block: str, property_name: str, justify: str) -> str:
+    """Set the horizontal justification (left/right/center) in a property's effects."""
+    m = re.search(r'\(property\s+"' + re.escape(property_name) + r'"', block)
+    if not m:
+        return block
+    ps = m.start()
+    pe = _find_matching_paren(block, ps)
+    if pe < 0:
+        return block
+    prop_sub = block[ps : pe + 1]
+    em = re.search(r"\(effects", prop_sub)
+    if not em:
+        return block
+    es = em.start()
+    ee = _find_matching_paren(prop_sub, es)
+    if ee < 0:
+        return block
+    effects = prop_sub[es : ee + 1]
+    jm = re.search(r"\s*\(justify((?:\s+\w+)*)\)", effects)
+    vertical = []
+    if jm:
+        vertical = [t for t in jm.group(1).split() if t in ("top", "bottom", "mirror")]
+        effects = effects[: jm.start()] + effects[jm.end() :]
+    tokens = ([] if justify == "center" else [justify]) + vertical
+    if tokens:
+        effects = effects[:-1] + f" (justify {' '.join(tokens)}))"
+    prop_sub = prop_sub[:es] + effects + prop_sub[ee + 1 :]
+    return block[:ps] + prop_sub + block[pe + 1 :]
+
+
+def _move_property_in_block(
+    block_text, property_name, x, y, angle, visible, justify=None, orientation=None
+) -> Tuple[str, int]:
+    """Replace a property's (at ...) and apply visibility. Returns (new_block, n_substitutions).
+
+    ``orientation`` ("horizontal"/"vertical") and ``justify`` ("left"/"right"/
+    "center") describe the text as it appears on the sheet; they are converted
+    for the symbol's rotation and mirroring. ``orientation`` overrides ``angle``.
+    """
+    if orientation:
+        angle = _stored_field_angle(block_text, orientation)
     prop_pat = re.compile(
         r'(\(property\s+"'
         + re.escape(property_name)
@@ -166,6 +242,10 @@ def _move_property_in_block(block_text, property_name, x, y, angle, visible) -> 
     new_block, n_subs = prop_pat.subn(r"\g<1>" + f"(at {x} {y} {angle})", block_text)
     if n_subs == 0:
         return block_text, 0
+    if justify:
+        new_block = _apply_justify(
+            new_block, property_name, _stored_field_justify(block_text, justify)
+        )
     return _apply_visibility(new_block, property_name, visible), n_subs
 
 
