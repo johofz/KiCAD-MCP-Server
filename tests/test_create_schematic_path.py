@@ -142,3 +142,14 @@ def test_create_schematic_fallback_writes_kicad10_header():
     assert "(version 20260101)" in written, written
     assert 'generator "eeschema"' in written
     assert "20250114" not in written
+
+
+def test_new_schematic_uuid_is_quoted(tmp_path):
+    """eeschema writes the sheet UUID quoted: (uuid "...")."""
+    import re
+
+    from commands.schematic import SchematicManager
+
+    SchematicManager.create_schematic("q", path=str(tmp_path))
+    head = (tmp_path / "q.kicad_sch").read_text(encoding="utf-8")[:400]
+    assert re.search(r'\(uuid "[0-9a-f-]{36}"\)', head)

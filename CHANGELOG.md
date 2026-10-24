@@ -67,6 +67,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   jumpers and mounting holes are `in_bom no` in KiCad's libraries, and their
   footprints are excluded from the BOM, so DRC with schematic parity reported a
   mismatch for every one of them.
+- **`create_schematic` quotes the sheet UUID** (`(uuid "...")`), as eeschema
+  writes it.
 - **Sheet pin names read into the sheet.** `add_sheet_pin` wrote the
   justification the wrong way round, so names were drawn outside the sheet box
   over the wires.
