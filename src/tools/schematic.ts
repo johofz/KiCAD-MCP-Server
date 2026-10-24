@@ -2244,6 +2244,179 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Add a bus (one segment per consecutive waypoint pair)
+  server.tool(
+    "add_schematic_bus",
+    "Draw a bus through two or more waypoints. Each consecutive pair becomes one bus segment. " +
+      "New segments are split at every existing bus entry that lies on them, because KiCad only " +
+      "attaches bus entries to segment end points. Label the bus with a bus label such as " +
+      "'D[0..7]' via add_schematic_net_label; members connect by name.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      waypoints: z
+        .array(z.array(z.number()).length(2))
+        .min(2)
+        .describe("Bus path as [[x, y], [x, y], ...] in mm (at least 2 points)"),
+    },
+    async (args: { schematicPath: string; waypoints: number[][] }) => {
+      const result = await callKicadScript("add_schematic_bus", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: result.message || `Added bus with ${args.waypoints.length - 1} segment(s)`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to add bus: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Add a wire-to-bus entry
+  server.tool(
+    "add_schematic_bus_entry",
+    "Add a 45° wire-to-bus entry. 'position' is the point ON THE BUS; the wire end is " +
+      "position + (±2.54, ±2.54) mm in the given direction ('up' = negative y). Any bus segment " +
+      "passing through the bus point is split there so the entry connects. Returns the wire-end " +
+      "coordinates (wireEnd) to start the member wire from.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      position: z.array(z.number()).length(2).describe("Bus-side point [x, y] in mm, on the bus"),
+      direction: z
+        .enum(["up_left", "up_right", "down_left", "down_right"])
+        .describe("Direction from the bus point to the wire end"),
+    },
+    async (args: {
+      schematicPath: string;
+      position: number[];
+      direction: "up_left" | "up_right" | "down_left" | "down_right";
+    }) => {
+      const result = await callKicadScript("add_schematic_bus_entry", args);
+      if (result.success) {
+        const end = result.wireEnd;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: result.message || `Added bus entry; wire end at (${end?.x}, ${end?.y})`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to add bus entry: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Add a graphic rectangle (e.g. a frame around a functional group)
+  server.tool(
+    "add_schematic_rectangle",
+    "Draw a graphic rectangle on the schematic, such as a dashed boundary frame around a functional " +
+      "group. Purely graphical: it has no electrical meaning.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      start: z.array(z.number()).length(2).describe("One corner [x, y] in mm"),
+      end: z.array(z.number()).length(2).describe("Opposite corner [x, y] in mm"),
+      strokeWidth: z.number().optional().describe("Line width in mm (default: 0.1524)"),
+      strokeType: z
+        .enum(["solid", "dash", "dot", "dash_dot", "dash_dot_dot"])
+        .optional()
+        .describe("Line style (default: dash)"),
+      fill: z
+        .enum(["none", "background"])
+        .optional()
+        .describe("Fill: none or the schematic background colour (default: none)"),
+    },
+    async (args: {
+      schematicPath: string;
+      start: number[];
+      end: number[];
+      strokeWidth?: number;
+      strokeType?: "solid" | "dash" | "dot" | "dash_dot" | "dash_dot_dot";
+      fill?: "none" | "background";
+    }) => {
+      const result = await callKicadScript("add_schematic_rectangle", args);
+      if (result.success) {
+        return {
+          content: [{ type: "text" as const, text: result.message || "Rectangle added" }],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to add rectangle: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Add a text box (wrapped text inside an optional border)
+  server.tool(
+    "add_schematic_text_box",
+    "Add a text box: text inside a rectangle of the given size, with an optional border. " +
+      "Use it for notes and block descriptions. No electrical meaning. Newlines in the text " +
+      "are kept.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      text: z.string().describe("Text content (may contain newlines)"),
+      position: z.array(z.number()).length(2).describe("Top-left corner [x, y] in mm"),
+      size: z.array(z.number()).length(2).describe("Box size [width, height] in mm"),
+      fontSize: z.number().optional().describe("Font size in mm (default: 1.27)"),
+      border: z.boolean().optional().describe("Draw the border (default: true)"),
+      bold: z.boolean().optional().describe("Bold text (default: false)"),
+      justify: z
+        .enum(["left", "center", "right"])
+        .optional()
+        .describe("Horizontal text justification (default: left)"),
+    },
+    async (args: {
+      schematicPath: string;
+      text: string;
+      position: number[];
+      size: number[];
+      fontSize?: number;
+      border?: boolean;
+      bold?: boolean;
+      justify?: "left" | "center" | "right";
+    }) => {
+      const result = await callKicadScript("add_schematic_text_box", args);
+      if (result.success) {
+        return {
+          content: [{ type: "text" as const, text: result.message || "Text box added" }],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to add text box: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
   // Add sheet pin to a sheet block on the parent schematic
   server.tool(
     "add_sheet_pin",

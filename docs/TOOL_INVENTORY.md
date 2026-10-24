@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.2
-**Tools registered on the server:** 244
-**Tools indexed for keyword discovery:** 184 in 17 categories
-**Last updated:** 2026-09-24
+**Tools registered on the server:** 248
+**Tools indexed for keyword discovery:** 188 in 17 categories
+**Last updated:** 2026-10-24
 
 ## How to read this document
 
@@ -194,7 +194,7 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (46 tools)
+## Schematic (50 tools)
 
 _Source: `src/tools/schematic.ts`_
 
@@ -245,6 +245,10 @@ _Source: `src/tools/schematic.ts`_
 | `add_schematic_hierarchical_label`    | Add hierarchical label for multi-sheet connections                                                                                                   | Not indexed             |
 | `list_schematic_texts`                | List all text annotations (with optional filter)                                                                                                     | `schematic`             |
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
+| `add_schematic_bus`                   | Draw a bus through two or more waypoints.                                                                                                            | `schematic`             |
+| `add_schematic_bus_entry`             | Add a 45° wire-to-bus entry.                                                                                                                         | `schematic`             |
+| `add_schematic_rectangle`             | Draw a graphic rectangle on the schematic, such as a dashed boundary frame around a functional group.                                                | `schematic`             |
+| `add_schematic_text_box`              | Add a text box: text inside a rectangle of the given size, with an optional border.                                                                  | `schematic`             |
 | `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | Not indexed             |
 
 ---
@@ -509,7 +513,7 @@ _Source: `src/tools/gui-driver.ts`_
 | `routing.ts`             | Routing                                | 17      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
-| `schematic.ts`           | Schematic                              | 46      |
+| `schematic.ts`           | Schematic                              | 50      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
@@ -528,11 +532,11 @@ _Source: `src/tools/gui-driver.ts`_
 | `router.ts`              | Tool Discovery                         | 3       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
-| **Total**                |                                        | **244** |
+| **Total**                |                                        | **248** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 184 of the 244 registered tools.
+These are the categories `search_tools` searches. They cover 188 of the 248 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -540,7 +544,7 @@ These are the categories `search_tools` searches. They cover 184 of the 244 regi
 | `component`                | 15            |
 | `export`                   | 27            |
 | `drc`                      | 7             |
-| `schematic`                | 26            |
+| `schematic`                | 30            |
 | `library`                  | 7             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
@@ -553,6 +557,6 @@ These are the categories `search_tools` searches. They cover 184 of the 244 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **184**       |
+| **Indexed total**          | **188**       |
 | Registered but not indexed | 60            |
-| **Registered total**       | **244**       |
+| **Registered total**       | **248**       |

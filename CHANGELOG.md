@@ -4,6 +4,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New tools
+
+- **`add_schematic_bus`, `add_schematic_bus_entry`.** Buses and 45° wire-to-bus
+  entries in the KiCad 9 format. KiCad attaches an entry only to a bus segment's
+  end point, so a new bus is cut at every existing entry on it and an entry
+  placed on an existing bus splits that segment, as eeschema does. The entry
+  tool returns the wire-end coordinates.
+- **`add_schematic_rectangle`, `add_schematic_text_box`.** Graphic frames
+  around functional groups (dashed by default) and bordered or borderless text
+  boxes. A borderless text box gets KiCad's own encoding, a stroke width of
+  -1 internal unit (`-0.0001`).
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag

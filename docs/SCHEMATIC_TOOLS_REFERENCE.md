@@ -3,7 +3,7 @@
 Added in: v2.1.0, expanded through v2.7.0
 Contributors: @Mehanik (PRs #60, #66), @Kletternaut (PR #57), @karu2003 (v2.7.0)
 
-`src/tools/schematic.ts` registers 46 schematic tools; another 19 live in
+`src/tools/schematic.ts` registers 50 schematic tools; another 19 live in
 `schematic-batch.ts`, `schematic-hierarchy.ts` and `schematic-layout.ts`. This
 document covers the ones that need more explanation than a one-line summary. For
 the full list, see the generated [Tool Inventory](TOOL_INVENTORY.md).
@@ -417,6 +417,76 @@ List all free-form text annotations in the schematic. Optionally filter by a sub
 | justify   | `"left"` \| `"center"` \| `"right"` |
 | uuid      | KiCad UUID of the element           |
 
+## Buses, Frames and Text Boxes (4 tools)
+
+### add_schematic_bus
+
+Draw a bus through two or more waypoints; each consecutive pair becomes one
+`(bus ...)` segment. KiCad attaches a bus entry only to the **end point** of a
+bus segment, so new segments are cut at every existing bus entry that lies
+strictly inside them (eeschema does the same when you draw a bus). An existing
+bus that one of the new outer end points lands in the middle of is split there
+too, as `add_schematic_wire` does for wires. Members connect by name: label the
+bus with a bus label such as `D[0..7]` via `add_schematic_net_label`.
+
+| Parameter     | Type            | Required | Description                       |
+| ------------- | --------------- | -------- | --------------------------------- |
+| schematicPath | string          | Yes      | Path to the .kicad_sch file       |
+| waypoints     | array of [x, y] | Yes      | Bus path in mm, at least 2 points |
+
+**Response:** `segments` (`[[x1, y1, x2, y2], ...]` as written) and
+`splitExisting` (existing bus segments split at the new end points).
+
+### add_schematic_bus_entry
+
+Add a 45° wire-to-bus entry. KiCad writes it as
+`(bus_entry (at X Y) (size DX DY) ...)`: `at` is the point on the bus and
+`at + size` the wire end. Any bus segment whose interior holds the bus point is
+split there.
+
+| Parameter     | Type         | Required | Description                                                                |
+| ------------- | ------------ | -------- | -------------------------------------------------------------------------- |
+| schematicPath | string       | Yes      | Path to the .kicad_sch file                                                |
+| position      | array [x, y] | Yes      | The point ON THE BUS, in mm                                                |
+| direction     | enum         | Yes      | `up_left` \| `up_right` \| `down_left` \| `down_right` ("up" = negative y) |
+
+**Response:** `wireEnd` (`{"x", "y"}`, start the member wire here), `size`
+(`[dx, dy]`, ±2.54 mm), `position`, `splitExisting`.
+
+### add_schematic_rectangle
+
+Draw a graphic rectangle, e.g. a dashed boundary frame around a functional
+group. It has no electrical meaning.
+
+| Parameter     | Type         | Required | Description                                                                  |
+| ------------- | ------------ | -------- | ---------------------------------------------------------------------------- |
+| schematicPath | string       | Yes      | Path to the .kicad_sch file                                                  |
+| start         | array [x, y] | Yes      | One corner in mm                                                             |
+| end           | array [x, y] | Yes      | Opposite corner in mm                                                        |
+| strokeWidth   | number       | No       | Line width in mm (default: 0.1524)                                           |
+| strokeType    | enum         | No       | `solid` \| `dash` \| `dot` \| `dash_dot` \| `dash_dot_dot` (default: `dash`) |
+| fill          | enum         | No       | `none` \| `background` (default: `none`)                                     |
+
+### add_schematic_text_box
+
+Add a text box: text wrapped inside a rectangle with an optional border.
+Newlines and quotes in the text are escaped as `add_schematic_text` does. The
+margins are the ones KiCad gives a new text box (half the stroke width plus
+0.75 × the text height). Without a border the stroke width is written as
+`-0.0001` (−1 internal unit), which is how KiCad's text dialog records "no
+border".
+
+| Parameter     | Type         | Required | Description                                     |
+| ------------- | ------------ | -------- | ----------------------------------------------- |
+| schematicPath | string       | Yes      | Path to the .kicad_sch file                     |
+| text          | string       | Yes      | Text content (may contain newlines)             |
+| position      | array [x, y] | Yes      | Top-left corner in mm                           |
+| size          | array [w, h] | Yes      | Box size in mm (both positive)                  |
+| fontSize      | number       | No       | Font size in mm (default: 1.27)                 |
+| border        | boolean      | No       | Draw the border (default: true)                 |
+| bold          | boolean      | No       | Bold text (default: false)                      |
+| justify       | string       | No       | `left` \| `center` \| `right` (default: `left`) |
+
 ## Schematic Creation and Export (6 tools)
 
 ### create_schematic
@@ -645,7 +715,7 @@ These live in other reference documents but belong to the same workflow:
 Paths are relative to the repository root.
 
 - **TypeScript (tool definitions):**
-  - `src/tools/schematic.ts` - the 46 core schematic tools
+  - `src/tools/schematic.ts` - the 50 core schematic tools
   - `src/tools/schematic-batch.ts` - bulk add, edit, connect
   - `src/tools/schematic-hierarchy.ts` - hierarchical sheets
   - `src/tools/schematic-layout.ts` - field placement and cosmetic lint
