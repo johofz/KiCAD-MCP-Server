@@ -160,9 +160,10 @@ class SchematicManager:
                 with open(output_path, "r", encoding="utf-8") as f:
                     content = f.read()
                 new_uuid = str(uuid.uuid4())
+                # KiCad writes the UUID quoted; templates may carry either form.
                 content = re.sub(
-                    r"\(uuid [0-9a-fA-F-]+\)",
-                    f"(uuid {new_uuid})",
+                    r'\(uuid "?[0-9a-fA-F-]+"?\)',
+                    f'(uuid "{new_uuid}")',
                     content,
                     count=1,  # Only replace first (schematic) UUID
                 )
@@ -181,7 +182,7 @@ class SchematicManager:
                     # Header in the format of the installed KiCad (9 or 10),
                     # matching what eeschema writes for a new file (issue #221).
                     f.write(schematic_header() + "\n\n")
-                    f.write(f"  (uuid {schematic_uuid})\n\n")
+                    f.write(f'  (uuid "{schematic_uuid}")\n\n')
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
                     f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
