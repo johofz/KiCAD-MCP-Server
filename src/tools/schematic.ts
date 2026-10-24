@@ -2419,6 +2419,55 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Title block of one sheet
+  server.tool(
+    "set_schematic_title_block",
+    "Set the title block of one schematic sheet: title, date, revision, company and comments " +
+      "1-9. Only the fields given change; an empty string removes a field. KiCad's default " +
+      "drawing sheet shows them, and custom .kicad_wks sheets read them as ${TITLE}, " +
+      "${ISSUE_DATE}, ${REVISION}, ${COMPANY} and ${COMMENT1}.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      title: z.string().optional().describe("Sheet title"),
+      date: z.string().optional().describe("Issue date, e.g. 2026-10-24"),
+      revision: z.string().optional().describe("Revision, e.g. B"),
+      company: z.string().optional().describe("Company or project"),
+      comments: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe('Comments by number 1-9, e.g. {"1": "4 channels"}'),
+    },
+    async (args: {
+      schematicPath: string;
+      title?: string;
+      date?: string;
+      revision?: string;
+      company?: string;
+      comments?: Record<string, string>;
+    }) => {
+      const result = await callKicadScript("set_schematic_title_block", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${result.message}\n${JSON.stringify(result.titleBlock, null, 2)}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to set title block: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
   // Add a text box (wrapped text inside an optional border)
   server.tool(
     "add_schematic_text_box",

@@ -756,6 +756,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
             "add_schematic_text": self._handle_add_schematic_text,
             "add_schematic_text_box": self._handle_add_schematic_text_box,
+            "set_schematic_title_block": self._handle_set_schematic_title_block,
             "add_schematic_bus": self._handle_add_schematic_bus,
             "add_schematic_bus_entry": self._handle_add_schematic_bus_entry,
             "add_schematic_rectangle": self._handle_add_schematic_rectangle,

@@ -2945,6 +2945,59 @@ class SchematicHandlersMixin:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    def _handle_set_schematic_title_block(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set title, date, revision, company and comments of a sheet's title block."""
+        logger.info("Setting schematic title block")
+        try:
+            from commands.schematic_text_utils import _read_title_block, _set_title_block
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            fields = {
+                "title": params.get("title"),
+                "date": params.get("date"),
+                "rev": params.get("revision"),
+                "company": params.get("company"),
+            }
+            raw_comments = params.get("comments") or {}
+            if isinstance(raw_comments, list):
+                raw_comments = {i + 1: v for i, v in enumerate(raw_comments)}
+            comments = {}
+            for n, v in raw_comments.items():
+                if not str(n).isdigit() or not 1 <= int(n) <= 9:
+                    return {"success": False, "message": f"comment number {n} is not 1-9"}
+                comments[int(n)] = v
+
+            content = sch_file.read_text(encoding="utf-8")
+            new_content = _set_title_block(content, fields, comments)
+            if new_content != content:
+                sch_file.write_text(new_content, encoding="utf-8")
+                self._reload_kicad_schematic()
+            title_fields, title_comments, _, _ = _read_title_block(new_content)
+            return {
+                "success": True,
+                "message": f"Title block of {sch_file.name} set",
+                "titleBlock": {
+                    "title": title_fields.get("title", ""),
+                    "date": title_fields.get("date", ""),
+                    "revision": title_fields.get("rev", ""),
+                    "company": title_fields.get("company", ""),
+                    "comments": {str(n): v for n, v in sorted(title_comments.items())},
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting schematic title block: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
     def _handle_add_schematic_hierarchical_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a hierarchical label to a sub-sheet schematic."""
         logger.info("Adding hierarchical label to schematic")

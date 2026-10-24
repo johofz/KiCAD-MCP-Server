@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from utils.sexpr_format import QUOTED_VALUE, unescape_sexpr_string
+from utils.sexpr_format import QUOTED_VALUE, escape_sexpr_string, unescape_sexpr_string
 
 _KICAD_INTERNAL_PROPS = frozenset(
     {"ki_keywords", "ki_description", "ki_fp_filters", "ki_locked", "ki_model"}
@@ -284,3 +284,68 @@ def _find_facing_label(sch_path, net_name, position, orientation, proximity_mm=1
     except Exception:
         pass
     return None
+
+
+_TITLE_BLOCK_KEYS = ("title", "date", "rev", "company")
+
+
+def _read_title_block(content: str) -> Tuple[Dict[str, str], Dict[int, str], int, int]:
+    """Parse the top-level (title_block ...) of a .kicad_sch.
+
+    Returns (fields, comments, start, end); start/end are -1 without a block.
+    """
+    m = re.search(r"^\t\(title_block\b", content, re.M)
+    if not m:
+        return {}, {}, -1, -1
+    start = m.start() + 1
+    end = _find_matching_paren(content, start)
+    block = content[start : end + 1]
+    fields = {
+        k: unescape_sexpr_string(v.group(1))
+        for k in _TITLE_BLOCK_KEYS
+        if (v := re.search(r"\(" + k + r"\s+" + QUOTED_VALUE + r"\)", block))
+    }
+    comments = {
+        int(n): unescape_sexpr_string(v)
+        for n, v in re.findall(r"\(comment\s+(\d+)\s+" + QUOTED_VALUE + r"\)", block)
+    }
+    return fields, comments, start, end
+
+
+def _set_title_block(
+    content: str, fields: Dict[str, Optional[str]], comments: Dict[int, Optional[str]]
+) -> str:
+    """Merge *fields* (title/date/rev/company) and *comments* (1-9) into the title block.
+
+    None leaves a field as it is, "" removes it. The block is written in
+    eeschema's layout and order, directly after (paper ...), and dropped when
+    nothing is left in it.
+    """
+    old_fields, old_comments, start, end = _read_title_block(content)
+    for k, v in fields.items():
+        if v is not None:
+            old_fields[k] = v
+    for n, v in comments.items():
+        if v is not None:
+            old_comments[int(n)] = v
+    lines = [
+        f'\t\t({k} "{escape_sexpr_string(old_fields[k])}")'
+        for k in _TITLE_BLOCK_KEYS
+        if old_fields.get(k)
+    ]
+    lines += [
+        f'\t\t(comment {n} "{escape_sexpr_string(v)}")'
+        for n, v in sorted(old_comments.items())
+        if v
+    ]
+    block = "\t(title_block\n" + "\n".join(lines) + "\n\t)\n" if lines else ""
+    if start >= 0:
+        # drop the old block with its indentation and line break
+        line_start = content.rfind("\n", 0, start) + 1
+        line_end = content.find("\n", end)
+        line_end = len(content) if line_end < 0 else line_end + 1
+        return content[:line_start] + block + content[line_end:]
+    m = re.search(r"^\t\(paper\b[^\n]*\n", content, re.M)
+    if not m:
+        raise ValueError("No (paper ...) line found to place the title block after")
+    return content[: m.end()] + block + content[m.end() :]

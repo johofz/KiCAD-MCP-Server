@@ -15,6 +15,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   around functional groups (dashed by default) and bordered or borderless text
   boxes. A borderless text box gets KiCad's own encoding, a stroke width of
   -1 internal unit (`-0.0001`).
+- **`set_schematic_title_block`.** Title, date, revision, company and comments
+  1-9 of one sheet. Only the fields given change, an empty string removes one.
 - **`list_sheet_instances`, `set_symbol_instance`.** The first lists every use
   of every sheet below a root (reused sheets once per use) with the instance
   path symbols use, the sheet name, file, page and parent path. The second sets
@@ -29,6 +31,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   since KiCad never writes two mirror tokens. A kicad-cli netlist test wires a
   mirrored op-amp unit through `connect_to_net` at all four rotations and
   checks every label lands on its pin.
+- **`set_schematic_property_position` and `batch_set_schematic_property_positions`
+  take `orientation` and `justify`** (horizontal/vertical, left/right/center as
+  seen on the sheet). eeschema turns a field's text with its symbol and swaps
+  left and right for rotations of 90° and 180° and for a Y mirror; the server
+  converts for that, so `orientation: "horizontal"` reads horizontally on a
+  vertical resistor too.
 - **`annotate_schematic` takes `scheme` and `reset`.** `scheme: "sheet_x100"`
   numbers the parts on page P as P*100+1, P*100+2, ... per prefix (R501, C501,
   #PWR501 on page 5), ordered top-to-bottom then left-to-right, each use of a
@@ -39,6 +47,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Pins and wire ends in the middle of a wire are connected.** KiCad connects
+  wires only at their end points. `add_schematic_wire` now splits every wire at
+  the pins and wire ends lying on it, and placing a symbol splits the wires
+  under its pins, as eeschema does. Before, a wire drawn across a pin, or a
+  decoupling capacitor placed on a rail, stayed unconnected ("Pin not
+  connected" in ERC). Junctions are now also written on sub-sheets, which have
+  no `(sheet_instances)` block.
+- **Field positions of placed symbols.** Library field positions are Y-up like
+  pins but were used as screen offsets: GND showed its name above the symbol,
+  supply symbols below the arrow, capacitors had the value above the reference.
+  Fields now take the same transform as pins.
+- **Sheet pin names read into the sheet.** `add_sheet_pin` wrote the
+  justification the wrong way round, so names were drawn outside the sheet box
+  over the wires.
 - **Editing a multi-unit part edits every unit.** `edit_schematic_component`
   (value, footprint, `newReference`, properties) and
   `set_/remove_schematic_component_property` stopped at the first placed unit,

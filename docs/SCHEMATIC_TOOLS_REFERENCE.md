@@ -528,6 +528,24 @@ border".
 | bold          | boolean      | No       | Bold text (default: false)                      |
 | justify       | string       | No       | `left` \| `center` \| `right` (default: `left`) |
 
+### set_schematic_title_block
+
+Set the title block of one sheet. Only the fields passed change; an empty
+string removes a field, and the block is dropped when nothing is left in it.
+The block is written directly after `(paper ...)` in eeschema's layout. KiCad's
+default drawing sheet shows the fields; a custom `.kicad_wks` reads them as
+`${TITLE}`, `${ISSUE_DATE}`, `${REVISION}`, `${COMPANY}` and `${COMMENT1}` to
+`${COMMENT9}`. Each sheet file has its own title block.
+
+| Parameter     | Type   | Required | Description                                      |
+| ------------- | ------ | -------- | ------------------------------------------------ |
+| schematicPath | string | Yes      | Path to the .kicad_sch file                      |
+| title         | string | No       | Sheet title                                      |
+| date          | string | No       | Issue date, e.g. `2026-10-24`                    |
+| revision      | string | No       | Revision, e.g. `B`                               |
+| company       | string | No       | Company or project                               |
+| comments      | object | No       | Comments by number 1-9, e.g. `{"1": "4 Kanäle"}` |
+
 ## Sheet Instances and Per-Instance Units (2 tools)
 
 These live in `schematic-hierarchy.ts`. KiCad records a placed symbol's
