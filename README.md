@@ -29,7 +29,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 - Optional toolboxes: start with a 37-tool core and open the rest by category,
   to save context and stay under client tool limits
 - 23 dynamic resources exposing project state
-- Complete schematic workflow with 71 tools (authoring, batch edits, hierarchy, layout) and dynamic symbol loading (~10,000 symbols)
+- Complete schematic workflow with 72 tools (authoring, batch edits, hierarchy, layout) and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
 - Custom footprint and symbol creation tools
 - JLCPCB parts integration with 2.5M+ component catalog and local library search
@@ -1787,8 +1787,8 @@ How many Basic parts are available?
 
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (250), Resources (23)
-- **Tool discovery:** keyword search catalogue indexing 190 tools in 17 categories
+- **Capabilities:** Tools (251), Resources (23)
+- **Tool discovery:** keyword search catalogue indexing 191 tools in 17 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -1938,7 +1938,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (250 tools):**
+**Working Features (251 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
