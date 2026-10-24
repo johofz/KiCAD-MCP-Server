@@ -239,3 +239,40 @@ def test_kicad_cli_netlist_sees_one_renamed_part(tmp_path, iface):
         net.read_text(encoding="utf-8"),
     )
     assert comps == [("U501", "OPA4192", "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm")], comps
+
+
+@pytest.mark.unit
+class TestSymbolAttributes:
+    """inBom / onBoard / dnp / excludeFromSim on every placed unit."""
+
+    def _head(self, sch: Path, x: float) -> str:
+        text = sch.read_text(encoding="utf-8")
+        start = text.index(f'(symbol (lib_id "Amp:Quad") (at {x} 50 0)')
+        return text[start : text.index("(property", start)]
+
+    def test_missing_flags_are_added_after_unit(self, iface, tmp_path):
+        sch = _fixture(tmp_path)
+        result = iface._handle_edit_schematic_component(
+            {"schematicPath": str(sch), "reference": "U1", "inBom": False, "dnp": True}
+        )
+
+        assert result["success"] is True
+        assert result["updated"]["attributes"] == {"in_bom": False, "dnp": True}
+        for x in (50, 100, 150):
+            head = self._head(sch, x)
+            assert "(unit " in head and "(in_bom no)" in head and "(dnp yes)" in head
+        assert "(in_bom" not in self._head(sch, 200)
+
+    def test_existing_flag_is_replaced_once(self, iface, tmp_path):
+        sch = _fixture(tmp_path)
+        iface._handle_edit_schematic_component(
+            {"schematicPath": str(sch), "reference": "U2", "onBoard": False}
+        )
+        iface._handle_edit_schematic_component(
+            {"schematicPath": str(sch), "reference": "U2", "onBoard": True}
+        )
+
+        head = self._head(sch, 200)
+        assert head.count("(on_board") == 1 and "(on_board yes)" in head
+        text = sch.read_text(encoding="utf-8")
+        assert text.count("(") == text.count(")")

@@ -221,7 +221,8 @@ default to hidden so they do not clutter the schematic canvas.
 
 Multiple updates can be batched in a single call: pass any combination of
 \`footprint\`, \`value\`, \`newReference\`, \`fieldPositions\`, \`properties\`,
-and \`removeProperties\` together.
+\`removeProperties\` and the symbol attributes \`inBom\`, \`onBoard\`, \`dnp\`,
+\`excludeFromSim\` together.
 
 This is more efficient than delete + re-add because it preserves the component's
 position and UUID. Operates on .kicad_sch files only — to modify a PCB footprint
@@ -304,6 +305,13 @@ their own origin.`,
             "Reference, Value, Footprint, and Datasheet cannot be removed (clear them by setting " +
             'value to "" instead). Example: ["OldMPN", "Distributor_PN"]',
         ),
+      inBom: z
+        .boolean()
+        .optional()
+        .describe("Include in the BOM (false for test points, solder jumpers, mounting holes)"),
+      onBoard: z.boolean().optional().describe("Place a footprint on the board"),
+      dnp: z.boolean().optional().describe("Do not populate"),
+      excludeFromSim: z.boolean().optional().describe("Exclude from simulation"),
     },
     async (args: {
       schematicPath: string;
@@ -328,6 +336,10 @@ their own origin.`,
           }
       >;
       removeProperties?: string[];
+      inBom?: boolean;
+      onBoard?: boolean;
+      dnp?: boolean;
+      excludeFromSim?: boolean;
     }) => {
       // Normalise array-form justify (["left", "top"]) to the space-separated
       // string form ("left top") that the Python backend expects.
@@ -355,6 +367,12 @@ their own origin.`,
           summaryParts.push(`updated=${Object.keys(updated.propertiesUpdated).join(",")}`);
         if (updated.propertiesRemoved)
           summaryParts.push(`removed=${updated.propertiesRemoved.join(",")}`);
+        if (updated.attributes)
+          summaryParts.push(
+            Object.entries(updated.attributes)
+              .map(([k, v]) => `${k}=${v ? "yes" : "no"}`)
+              .join(", "),
+          );
         return {
           content: [
             {

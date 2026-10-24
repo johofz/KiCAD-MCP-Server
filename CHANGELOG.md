@@ -37,6 +37,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
   left and right for rotations of 90° and 180° and for a Y mirror; the server
   converts for that, so `orientation: "horizontal"` reads horizontally on a
   vertical resistor too.
+- **`edit_schematic_component` takes `inBom`, `onBoard`, `dnp` and
+  `excludeFromSim`**, on every placed unit. A test point is `in_bom yes` in
+  KiCad's library while its pad-only footprint is excluded from the BOM; this
+  sets the symbol to match.
 - **`annotate_schematic` takes `scheme` and `reset`.** `scheme: "sheet_x100"`
   numbers the parts on page P as P*100+1, P*100+2, ... per prefix (R501, C501,
   #PWR501 on page 5), ordered top-to-bottom then left-to-right, each use of a
