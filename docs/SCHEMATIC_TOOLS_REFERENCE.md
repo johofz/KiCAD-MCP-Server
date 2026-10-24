@@ -18,16 +18,22 @@ These tools enable a complete schematic design workflow, from creating projects 
 
 Add a component to the schematic. Symbol format is 'Library:SymbolName' (e.g., 'Device:R', 'EDA-MCP:ESP32-C3').
 
-| Parameter     | Type   | Required | Description                                                      |
-| ------------- | ------ | -------- | ---------------------------------------------------------------- |
-| schematicPath | string | Yes      | Path to the schematic file                                       |
-| symbol        | string | Yes      | Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3) |
-| reference     | string | Yes      | Component reference (e.g., R1, U1)                               |
-| value         | string | No       | Component value                                                  |
-| footprint     | string | No       | KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)            |
-| position      | object | No       | Position on schematic with x and y coordinates                   |
+| Parameter     | Type    | Required | Description                                                      |
+| ------------- | ------- | -------- | ---------------------------------------------------------------- |
+| schematicPath | string  | Yes      | Path to the schematic file                                       |
+| symbol        | string  | Yes      | Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3) |
+| reference     | string  | Yes      | Component reference (e.g., R1, U1)                               |
+| value         | string  | No       | Component value                                                  |
+| footprint     | string  | No       | KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)            |
+| position      | object  | No       | Position on schematic with x and y coordinates                   |
+| unit          | number  | No       | Unit of a multi-unit symbol (1=A, 2=B, ...; default 1)           |
+| angle         | number  | No       | Rotation in degrees, KiCad CCW (default 0)                       |
+| mirrorY       | boolean | No       | Flip left-right, written as `(mirror y)`                         |
+| mirrorX       | boolean | No       | Flip upside down, written as `(mirror x)`                        |
 
 **Usage Notes:** The dynamic symbol loader provides access to ~10,000 KiCad standard symbols. If a symbol is not in the static template map, it will be loaded dynamically from the specified library.
+
+`mirrorX` and `mirrorY` together are a 180° turn: KiCad never writes two mirror tokens, so the angle gets +180 and no mirror is written. Every pin-position helper (`get_schematic_pin_locations`, `connect_to_net`, `batch_connect`, `batch_add_and_connect`, junction placement) applies rotation and mirror the way eeschema does; a kicad-cli netlist test checks this for a mirrored op-amp unit at all four rotations.
 
 ### delete_schematic_component
 

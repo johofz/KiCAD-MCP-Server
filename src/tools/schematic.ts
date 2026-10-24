@@ -67,6 +67,13 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
         .describe(
           "Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction.",
         ),
+      mirrorX: z
+        .boolean()
+        .optional()
+        .describe(
+          "Mirror the symbol vertically (flip about the X axis, upside down), e.g. an op-amp with " +
+            "the inverting input at the bottom. mirrorX + mirrorY together is written as a 180° turn.",
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -78,6 +85,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       unit?: number;
       angle?: number;
       mirrorY?: boolean;
+      mirrorX?: boolean;
     }) => {
       // Transform to what Python backend expects
       const [library, symbolName] = args.symbol.includes(":")
@@ -98,6 +106,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
           unit: args.unit ?? 1,
           angle: args.angle ?? 0,
           mirrorY: args.mirrorY ?? false,
+          mirrorX: args.mirrorX ?? false,
         },
       };
 
