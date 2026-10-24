@@ -64,6 +64,14 @@ Custom properties are first-class — they survive ERC, are exported by
 `export_bom`, and are picked up by the JLCPCB / Digi-Key sourcing tooling. Newly
 created properties default to hidden so they do not clutter the schematic canvas.
 
+A multi-unit part (a quad op-amp placed as units 1–5, all `U1`) is edited in
+every placed unit with that reference in the file: value, footprint, the
+reference rename (including every `(instances ...)` entry) and properties,
+also through `set_schematic_component_property` and
+`remove_schematic_component_property`. Field and property positions apply as
+given to the first placed unit; the other units get the same offset from their
+own origin. The response's `symbolsEdited` counts the blocks changed.
+
 Multiple updates can be batched in a single call: pass any combination of
 `footprint`, `value`, `newReference`, `fieldPositions`, `properties`, and
 `removeProperties` together. This is more efficient than delete + re-add because

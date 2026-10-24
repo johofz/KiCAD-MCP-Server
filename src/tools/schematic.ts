@@ -225,7 +225,12 @@ and \`removeProperties\` together.
 
 This is more efficient than delete + re-add because it preserves the component's
 position and UUID. Operates on .kicad_sch files only — to modify a PCB footprint
-use edit_component instead.`,
+use edit_component instead.
+
+A multi-unit part (e.g. a quad op-amp placed as units 1-5, all U1) is edited in
+every placed unit of that reference in the file. Field and property positions are
+taken as given for the first placed unit; the other units get the same offset from
+their own origin.`,
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),

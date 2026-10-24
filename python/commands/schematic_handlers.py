@@ -775,7 +775,14 @@ class SchematicHandlersMixin:
             # Match any opening paren after `(symbol`; the lib_symbols range
             # check below excludes library-definition symbols, which use the
             # `(symbol "name" ...)` form (quoted string, not paren).
-            block_start = block_end = None
+            #
+            # Every match is collected, not just the first: a multi-unit part
+            # (a quad op-amp placed as units 1-5) is one (symbol ...) block per
+            # unit, all with the same reference. Value, footprint, reference
+            # and properties belong to the part, so editing only the first
+            # unit left the others disagreeing (KiCad then shows a different
+            # value per unit and the BOM/netlist pick whichever comes first).
+            blocks: List[Tuple[int, int]] = []
             search_start = 0
             pattern = re.compile(r"\(symbol\s+\(")
             while True:
@@ -796,133 +803,146 @@ class SchematicHandlersMixin:
                     r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
                     block_text,
                 ):
-                    block_start, block_end = pos, end
-                    break
+                    blocks.append((pos, end))
                 search_start = end + 1
 
-            if block_start is None or block_end is None:
+            if not blocks:
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic",
                 }
 
-            # Apply property replacements within the found block
-            block_text = content[block_start : block_end + 1]
+            def _origin(block_text: str) -> Tuple[float, float]:
+                # KiCAD always emits the symbol's own (at x y angle) before any
+                # (property ...) child blocks, so the FIRST (at ...) inside the
+                # symbol block is the symbol origin regardless of whether
+                # (lib_name ...) precedes (lib_id ...).
+                comp_at = re.search(r"\(at\s+([\d\.\-]+)\s+([\d\.\-]+)", block_text)
+                return (float(comp_at.group(1)), float(comp_at.group(2))) if comp_at else (0.0, 0.0)
 
-            # Determine the parent symbol position so that newly-added properties
-            # default to a sensible location (anchored near the component).
-            # KiCAD always emits the symbol's own (at x y angle) before any
-            # (property ...) child blocks, so the FIRST (at ...) inside the
-            # symbol block is the symbol origin regardless of whether
-            # (lib_name ...) precedes (lib_id ...).
-            comp_at = re.search(
-                r"\(at\s+([\d\.\-]+)\s+([\d\.\-]+)",
-                block_text,
-            )
-            comp_origin: Tuple[float, float] = (
-                (float(comp_at.group(1)), float(comp_at.group(2))) if comp_at else (0.0, 0.0)
-            )
+            if properties and not isinstance(properties, dict):
+                return {
+                    "success": False,
+                    "message": "properties must be a dict mapping property name -> value or spec",
+                }
+            if remove_properties and not isinstance(remove_properties, list):
+                return {
+                    "success": False,
+                    "message": "removeProperties must be a list of property names",
+                }
 
-            if new_footprint is not None:
-                escaped_fp = self._escape_sexpr_string(str(new_footprint))
-                block_text = re.sub(
-                    r'(\(property\s+"Footprint"\s+)"[^"]*"',
-                    rf'\1"{escaped_fp}"',
-                    block_text,
-                )
-            if new_value is not None:
-                escaped_v = self._escape_sexpr_string(str(new_value))
-                block_text = re.sub(
-                    r'(\(property\s+"Value"\s+)"[^"]*"',
-                    rf'\1"{escaped_v}"',
-                    block_text,
-                )
-            if new_reference is not None:
-                escaped_r = self._escape_sexpr_string(str(new_reference))
-                block_text = re.sub(
-                    r'(\(property\s+"Reference"\s+)"[^"]*"',
-                    rf'\1"{escaped_r}"',
-                    block_text,
-                )
-                # Also update the (reference "...") leaves inside the symbol's
-                # (instances) → (project) → (path) subtree. KiCad reads those
-                # entries — not the (property "Reference" ...) field — when
-                # generating netlists and syncing the PCB via "Update PCB from
-                # Schematic", so leaving them stale produces a silent
-                # reference mismatch where eeschema shows the new ref but ERC
-                # / netlist export / PCB sync all use the old one. See #126.
-                instances_pos = block_text.find("(instances")
-                if instances_pos >= 0:
-                    instances_end = self._find_matching_paren(block_text, instances_pos)
-                    if instances_end >= 0:
-                        instances_block = block_text[instances_pos : instances_end + 1]
-                        updated_instances = re.sub(
-                            r'(\(reference\s+)"' + re.escape(reference) + r'"',
-                            rf'\1"{escaped_r}"',
-                            instances_block,
-                        )
-                        block_text = (
-                            block_text[:instances_pos]
-                            + updated_instances
-                            + block_text[instances_end + 1 :]
-                        )
-            if field_positions is not None:
-                for field_name, pos in field_positions.items():
-                    x = pos.get("x", 0)
-                    y = pos.get("y", 0)
-                    angle = pos.get("angle", 0)
-                    block_text = re.sub(
-                        r'(\(property\s+"'
-                        + re.escape(field_name)
-                        + r'"\s+"[^"]*"\s+)\(at\s+[\d\.\-]+\s+[\d\.\-]+\s+[\d\.\-]+\s*\)',
-                        rf"\1(at {x} {y} {angle})",
-                        block_text,
-                    )
-                    justify = pos.get("justify")
-                    if justify is not None:
-                        block_text = self._set_justify_on_property(
-                            block_text, field_name, str(justify)
-                        )
+            # Field and property positions are canvas coordinates near the
+            # first placed unit. The other units keep the same offset from
+            # their own origin, so a moved Value label does not jump to unit A.
+            first_origin = _origin(content[blocks[0][0] : blocks[0][1] + 1])
 
             properties_added: Dict[str, Any] = {}
             properties_updated: Dict[str, Any] = {}
-            if properties:
-                if not isinstance(properties, dict):
-                    return {
-                        "success": False,
-                        "message": "properties must be a dict mapping property name -> value or spec",
-                    }
-                for name, spec in properties.items():
-                    if not isinstance(name, str) or not name:
-                        return {
-                            "success": False,
-                            "message": f"Invalid property name: {name!r}",
-                        }
-                    # Normalise scalar values to a spec dict with just {"value": ...}
-                    if not isinstance(spec, dict):
-                        spec = {"value": spec}
-                    try:
-                        block_text, action = self._set_property_in_block(
-                            block_text, name, spec, comp_origin
-                        )
-                    except ValueError as ve:
-                        return {"success": False, "message": str(ve)}
-                    target = properties_added if action == "added" else properties_updated
-                    target[name] = spec.get("value")
-
             properties_removed: list = []
-            if remove_properties:
-                if not isinstance(remove_properties, list):
-                    return {
-                        "success": False,
-                        "message": "removeProperties must be a list of property names",
-                    }
-                for name in remove_properties:
-                    block_text, removed = self._remove_property_from_block(block_text, name)
-                    if removed:
-                        properties_removed.append(name)
+            edited: List[Tuple[int, int, str]] = []
+            for block_start, block_end in blocks:
+                # Apply property replacements within the found block
+                block_text = content[block_start : block_end + 1]
+                comp_origin = _origin(block_text)
+                dx = comp_origin[0] - first_origin[0]
+                dy = comp_origin[1] - first_origin[1]
 
-            content = content[:block_start] + block_text + content[block_end + 1 :]
+                def _shift(value: Any, delta: float) -> Any:
+                    if value is None or not delta:
+                        return value
+                    return round(float(value) + delta, 4)
+
+                if new_footprint is not None:
+                    escaped_fp = self._escape_sexpr_string(str(new_footprint))
+                    block_text = re.sub(
+                        r'(\(property\s+"Footprint"\s+)"[^"]*"',
+                        rf'\1"{escaped_fp}"',
+                        block_text,
+                    )
+                if new_value is not None:
+                    escaped_v = self._escape_sexpr_string(str(new_value))
+                    block_text = re.sub(
+                        r'(\(property\s+"Value"\s+)"[^"]*"',
+                        rf'\1"{escaped_v}"',
+                        block_text,
+                    )
+                if new_reference is not None:
+                    escaped_r = self._escape_sexpr_string(str(new_reference))
+                    block_text = re.sub(
+                        r'(\(property\s+"Reference"\s+)"[^"]*"',
+                        rf'\1"{escaped_r}"',
+                        block_text,
+                    )
+                    # Also update the (reference "...") leaves inside the symbol's
+                    # (instances) → (project) → (path) subtree. KiCad reads those
+                    # entries — not the (property "Reference" ...) field — when
+                    # generating netlists and syncing the PCB via "Update PCB from
+                    # Schematic", so leaving them stale produces a silent
+                    # reference mismatch where eeschema shows the new ref but ERC
+                    # / netlist export / PCB sync all use the old one. See #126.
+                    instances_pos = block_text.find("(instances")
+                    if instances_pos >= 0:
+                        instances_end = self._find_matching_paren(block_text, instances_pos)
+                        if instances_end >= 0:
+                            instances_block = block_text[instances_pos : instances_end + 1]
+                            updated_instances = re.sub(
+                                r'(\(reference\s+)"' + re.escape(reference) + r'"',
+                                rf'\1"{escaped_r}"',
+                                instances_block,
+                            )
+                            block_text = (
+                                block_text[:instances_pos]
+                                + updated_instances
+                                + block_text[instances_end + 1 :]
+                            )
+                if field_positions is not None:
+                    for field_name, pos in field_positions.items():
+                        x = _shift(pos.get("x", 0), dx)
+                        y = _shift(pos.get("y", 0), dy)
+                        angle = pos.get("angle", 0)
+                        block_text = re.sub(
+                            r'(\(property\s+"'
+                            + re.escape(field_name)
+                            + r'"\s+"[^"]*"\s+)\(at\s+[\d\.\-]+\s+[\d\.\-]+\s+[\d\.\-]+\s*\)',
+                            rf"\1(at {x} {y} {angle})",
+                            block_text,
+                        )
+                        justify = pos.get("justify")
+                        if justify is not None:
+                            block_text = self._set_justify_on_property(
+                                block_text, field_name, str(justify)
+                            )
+
+                if properties:
+                    for name, spec in properties.items():
+                        if not isinstance(name, str) or not name:
+                            return {
+                                "success": False,
+                                "message": f"Invalid property name: {name!r}",
+                            }
+                        # Normalise scalar values to a spec dict with just {"value": ...}
+                        if not isinstance(spec, dict):
+                            spec = {"value": spec}
+                        spec = dict(spec, x=_shift(spec.get("x"), dx), y=_shift(spec.get("y"), dy))
+                        try:
+                            block_text, action = self._set_property_in_block(
+                                block_text, name, spec, comp_origin
+                            )
+                        except ValueError as ve:
+                            return {"success": False, "message": str(ve)}
+                        target = properties_added if action == "added" else properties_updated
+                        target.setdefault(name, spec.get("value"))
+
+                if remove_properties:
+                    for name in remove_properties:
+                        block_text, removed = self._remove_property_from_block(block_text, name)
+                        if removed and name not in properties_removed:
+                            properties_removed.append(name)
+
+                edited.append((block_start, block_end, block_text))
+
+            for block_start, block_end, block_text in reversed(edited):
+                content = content[:block_start] + block_text + content[block_end + 1 :]
 
             with open(sch_file, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -947,7 +967,12 @@ class SchematicHandlersMixin:
 
             logger.info(f"Edited schematic component {reference}: {changes}")
             self._reload_kicad_schematic()
-            return {"success": True, "reference": reference, "updated": changes}
+            return {
+                "success": True,
+                "reference": reference,
+                "updated": changes,
+                "symbolsEdited": len(blocks),
+            }
 
         except Exception as e:
             logger.error(f"Error editing schematic component: {e}")

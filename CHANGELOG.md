@@ -24,6 +24,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
   mirrored op-amp unit through `connect_to_net` at all four rotations and
   checks every label lands on its pin.
 
+### Bug Fixes
+
+- **Editing a multi-unit part edits every unit.** `edit_schematic_component`
+  (value, footprint, `newReference`, properties) and
+  `set_/remove_schematic_component_property` stopped at the first placed unit,
+  so a quad op-amp renamed from U1 to U501 came out of kicad-cli's netlist as
+  two parts. All placed units with the reference are now changed; positions
+  given for fields keep their offset from each unit's origin.
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag
