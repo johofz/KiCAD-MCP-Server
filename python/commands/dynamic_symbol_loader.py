@@ -748,22 +748,6 @@ class DynamicSymbolLoader:
         except Exception:
             return {}
 
-    @staticmethod
-    def _rotate_offset(dx: float, dy: float, angle_deg: float) -> tuple:
-        """
-        Rotate a 2-D offset by angle_deg degrees (KiCad CCW-in-screen, i.e. Y-axis
-        points downward).  Returns (rx, ry) rounded to 3 decimal places.
-        """
-        import math
-
-        rad = math.radians(angle_deg)
-        # Standard CCW rotation in Y-down screen coordinates:
-        #   rx =  dx * cos(a) + dy * sin(a)
-        #   ry = -dx * sin(a) + dy * cos(a)
-        rx = dx * math.cos(rad) + dy * math.sin(rad)
-        ry = -dx * math.sin(rad) + dy * math.cos(rad)
-        return round(rx, 3), round(ry, 3)
-
     # ------------------------------------------------------------------ #
     # Instance-block helpers (project name, hierarchical path, pin uuids) #
     # ------------------------------------------------------------------ #
@@ -951,17 +935,24 @@ class DynamicSymbolLoader:
 
         _DEFAULT_EFFECTS = "(effects (font (size 1.27 1.27)))"
 
+        from commands.wire_dragger import WireDragger
+
         def _prop_at(
             name: str, fallback_dx: float, fallback_dy: float, fallback_angle: float = 0
         ) -> tuple:
-            """Return (abs_x, abs_y, text_angle, effects_str, hidden) for a property."""
+            """Return (abs_x, abs_y, text_angle, effects_str, hidden) for a property.
+
+            Library field positions are Y-up like pins and take the same symbol
+            transform (Y-flip, rotation, mirror). The fallbacks are screen
+            offsets (Y-down).
+            """
             if name in lib_props:
                 dx, dy, text_ang, eff, hidden = lib_props[name]
             else:
-                dx, dy, text_ang, eff = fallback_dx, fallback_dy, fallback_angle, _DEFAULT_EFFECTS
+                dx, dy, text_ang, eff = fallback_dx, -fallback_dy, fallback_angle, _DEFAULT_EFFECTS
                 hidden = False
-            rdx, rdy = self._rotate_offset(dx, dy, angle)
-            return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff, hidden
+            px, py = WireDragger.pin_world_xy(dx, dy, x, y, angle, mirror_x, mirror_y)
+            return round(px, 3), round(py, 3), text_ang, eff, hidden
 
         # Reference/Value inherit the library's visibility. Power symbols
         # (power:GND, power:+3V3, …) hide Reference by convention — the #PWR101
