@@ -706,3 +706,234 @@ def set_symbol_instance(
         "created": created,
         "firstUse": first_use,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Whole-hierarchy annotation: re-numbering and the sheet_x100 scheme
+# --------------------------------------------------------------------------- #
+
+_SYMBOL_AT = re.compile(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)")
+_ANNOTATABLE = re.compile(r"^(.*?)(\d+|\?+)$")
+
+#: Annotation schemes: "sequential" numbers each prefix 1, 2, 3, ... across the
+#: project; "sheet_x100" numbers the parts on page P as P*100+1, P*100+2, ...
+ANNOTATION_SCHEMES = ("sequential", "sheet_x100")
+
+
+class _Occurrence(NamedTuple):
+    """One placed symbol in one use of its sheet."""
+
+    file_key: str
+    part: int  # index into that file's parts
+    path: str
+    page: int
+    order: int  # position of the sheet use in the hierarchy (depth first)
+    reference: str
+    unit: str
+    x: float
+    y: float
+    lib_id: str
+    value: str
+    power: bool
+
+
+def _symbol_origin(block: str) -> Tuple[float, float]:
+    for child in iter_child_offsets(block):
+        m = _SYMBOL_AT.match(block, child)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+    return 0.0, 0.0
+
+
+def annotate_hierarchy(
+    sheet: Path, scheme: str = "sequential", reset: bool = False
+) -> List[Dict[str, Any]]:
+    """Annotate every sheet of *sheet*'s project, with *scheme*.
+
+    Works on the whole hierarchy below the project root (found from *sheet*),
+    like KiCad's "Annotate entire schematic". Without *reset* only
+    unannotated references (``R?``) are numbered and every existing number is
+    kept and avoided; with *reset* everything is numbered again.
+
+    * Each use of a reused sheet is a place of its own and gets its own
+      references.
+    * Symbols that share one reference (in any use) with different units are
+      ONE part and get one new reference: the units of a quad op-amp placed
+      as four symbols, or one symbol set to units A-D in four uses of its
+      sheet (set_symbol_instance). Two symbols with the same reference AND
+      unit are two parts. Unannotated units of one lib_id and value in one
+      use are packed together while the unit is free, as annotate_sheet does.
+    * Parts are ordered by page, then top-to-bottom, then left-to-right. A
+      part spread over several pages is numbered on the lowest of them.
+    * "sheet_x100": on page P each prefix counts P*100+1, P*100+2, ...
+      (R501, C501 on page 5; page 10 gives R1001), power and flag symbols
+      too (#PWR501). "sequential": each prefix counts 1, 2, 3, ... over the
+      project; power symbols keep KiCad's leading zero (#PWR01).
+
+    Returns ``[{instancePath, uuid, unit, oldReference, newReference, file}]``
+    for every symbol use that was numbered.
+    """
+    from utils.sheet_tree import sheet_instances
+
+    if scheme not in ANNOTATION_SCHEMES:
+        raise ValueError(f"scheme must be one of {', '.join(ANNOTATION_SCHEMES)}")
+    sheet = Path(sheet)
+    root, _paths = instance_paths(sheet)
+    if root is None:
+        root = sheet
+    uses = sheet_instances(root)
+
+    files: Dict[str, Path] = {}
+    file_paths: Dict[str, List[str]] = {}
+    for use in uses:
+        if not use.file_path.is_file():
+            continue
+        key = _real_key(use.file_path)
+        files.setdefault(key, use.file_path)
+        file_paths.setdefault(key, []).append(use.path)
+    add_missing_instances(files.values())
+
+    pages: Dict[str, int] = {}
+    for index, use in enumerate(uses):
+        try:
+            pages[use.path] = int(use.page)
+        except (TypeError, ValueError):
+            if scheme == "sheet_x100":
+                raise ValueError(
+                    f"sheet_x100 needs numeric page numbers; {use.sheet_name or 'root'} "
+                    f"({use.path}) has page {use.page!r}"
+                )
+            pages[use.path] = index + 1
+    order = {use.path: index for index, use in enumerate(uses)}
+
+    texts: Dict[str, Tuple[str, str]] = {}
+    parts: Dict[str, List[_Part]] = {}
+    occurrences: List[_Occurrence] = []
+    for key, file_path in files.items():
+        project = project_name(file_path)
+        text, newline = read_text_preserve_newline(file_path)
+        texts[key] = (text, newline)
+        power_ids = _power_lib_ids(text)
+        file_parts = [_read_part(text, s, e, project) for s, e in _placed_symbols(text)]
+        parts[key] = file_parts
+        paths = file_paths[key]
+        for index, part in enumerate(file_parts):
+            x, y = _symbol_origin(text[part.start : part.end])
+            for path in paths:
+                entry = next((e for e in part.entries if e.path == path), None)
+                if entry is not None:
+                    reference, unit = entry.reference, entry.unit
+                elif not any(e.path in paths for e in part.entries) and path == paths[0]:
+                    reference, unit = part.field, part.unit  # KiCad's fallback
+                else:
+                    continue
+                occurrences.append(
+                    _Occurrence(
+                        key,
+                        index,
+                        path,
+                        pages[path],
+                        order[path],
+                        reference,
+                        unit,
+                        x,
+                        y,
+                        part.lib_id,
+                        part.value,
+                        part.lib_id in power_ids,
+                    )
+                )
+
+    def is_target(occ: _Occurrence) -> bool:
+        m = _ANNOTATABLE.match(occ.reference or "")
+        if not m or not m.group(1):
+            return False
+        return reset or _unannotated(occ.reference)
+
+    reserved = ReferenceAllocator(o.reference for o in occurrences if not is_target(o))
+    targets = sorted(
+        (o for o in occurrences if is_target(o)),
+        key=lambda o: (o.page, o.order, o.y, o.x, o.file_key, o.part),
+    )
+
+    # Packages: lists of occurrences that become one part.
+    packages: List[List[_Occurrence]] = []
+    by_reference: Dict[str, List[List[_Occurrence]]] = {}
+    by_kind: Dict[Tuple[str, str, str], List[List[_Occurrence]]] = {}
+    for occ in targets:
+        if _unannotated(occ.reference):
+            pool = by_kind.setdefault((occ.path, occ.lib_id, occ.value), [])
+        else:
+            pool = by_reference.setdefault(occ.reference, [])
+        for package in pool:
+            if all(other.unit != occ.unit for other in package):
+                package.append(occ)
+                break
+        else:
+            package = [occ]
+            pool.append(package)
+            packages.append(package)
+
+    def placement(package: List[_Occurrence]) -> tuple:
+        first = min(package, key=lambda o: (o.page, o.order, o.y, o.x))
+        return first.page, first.order, first.y, first.x
+
+    packages.sort(key=placement)
+    counters: Dict[Tuple[int, str], int] = {}
+    new_reference: Dict[Tuple[str, int, str], str] = {}
+    for package in packages:
+        prefix = _ANNOTATABLE.match(package[0].reference).group(1)  # type: ignore[union-attr]
+        page = placement(package)[0]
+        counter = (page, prefix) if scheme == "sheet_x100" else (0, prefix)
+        n = counters.get(counter, page * 100 + 1 if scheme == "sheet_x100" else 1)
+        numbers = reserved._numbers.setdefault(prefix, set())
+        while n in numbers:
+            n += 1
+        numbers.add(n)
+        counters[counter] = n + 1
+        zero = package[0].power and scheme == "sequential"
+        reference = f"{prefix}{'0' if zero else ''}{n}"
+        for occ in package:
+            new_reference[(occ.file_key, occ.part, occ.path)] = reference
+
+    # Write: one (reference ...) per use, and the Reference field for the
+    # sheet's first use.
+    for key, file_path in files.items():
+        text, newline = texts[key]
+        paths = file_paths[key]
+        edits: List[Tuple[int, int, str]] = []
+        for index, part in enumerate(parts[key]):
+            new = {
+                p: new_reference[(key, index, p)] for p in paths if (key, index, p) in new_reference
+            }
+            if not new:
+                continue
+            block = text[part.start : part.end]
+            for entry in sorted(part.entries, key=lambda e: e.start, reverse=True):
+                if entry.path in new:
+                    token = f'(reference "{escape_sexpr_string(new[entry.path])}")'
+                    segment = _replace_first(_REFERENCE, block[entry.start : entry.end], token)
+                    block = block[: entry.start] + segment + block[entry.end :]
+            if paths[0] in new:
+                token = f'(property "Reference" "{escape_sexpr_string(new[paths[0]])}"'
+                block = _replace_first(_REFERENCE_FIELD, block, token)
+            edits.append((part.start, part.end, block))
+        if edits:
+            for start, end, block in reversed(edits):
+                text = text[:start] + block + text[end:]
+            write_text_atomic(file_path, text, newline)
+
+    mapping: List[Dict[str, Any]] = []
+    for occ in targets:
+        part = parts[occ.file_key][occ.part]
+        mapping.append(
+            {
+                "instancePath": occ.path,
+                "uuid": part.uuid,
+                "unit": int(occ.unit),
+                "oldReference": occ.reference,
+                "newReference": new_reference[(occ.file_key, occ.part, occ.path)],
+                "file": str(files[occ.file_key]),
+            }
+        )
+    return mapping
