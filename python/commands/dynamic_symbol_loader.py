@@ -902,6 +902,7 @@ class DynamicSymbolLoader:
         unit: int = 1,
         angle: float = 0,
         mirror_y: bool = False,
+        mirror_x: bool = False,
     ) -> bool:
         """
         Add a component instance to the schematic.
@@ -914,7 +915,14 @@ class DynamicSymbolLoader:
         Args:
             unit:  For multi-unit symbols, which unit to place (1=A, 2=B, …).
             angle: Placement rotation in degrees (KiCad CCW-in-screen convention).
+            mirror_y: Flip left-right, written as ``(mirror y)``.
+            mirror_x: Flip upside down, written as ``(mirror x)``. Both flips
+                together are a 180° turn: KiCad never writes two mirror
+                tokens, so the angle gets +180 and no mirror is written.
         """
+        if mirror_x and mirror_y:
+            angle = (float(angle) + 180) % 360
+            mirror_x = mirror_y = False
         full_lib_id = f"{library_name}:{symbol_name}"
         new_uuid = str(uuid.uuid4())
 
@@ -1098,7 +1106,7 @@ class DynamicSymbolLoader:
         else:
             attrs_line = "    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)\n"
 
-        mirror_str = " (mirror y)" if mirror_y else ""
+        mirror_str = " (mirror x)" if mirror_x else (" (mirror y)" if mirror_y else "")
         instance_block = (
             f'  (symbol (lib_id "{escape_sexpr_string(full_lib_id)}")'
             f" (at {_fmt(x)} {_fmt(y)} {_fmt(angle)})"
@@ -1175,6 +1183,7 @@ class DynamicSymbolLoader:
         angle: float = 0,
         mirror_y: bool = False,
         project_path: Optional[Path] = None,
+        mirror_x: bool = False,
     ) -> bool:
         """
         High-level: ensure symbol definition exists in schematic, then add an instance.
@@ -1183,6 +1192,8 @@ class DynamicSymbolLoader:
         Args:
             unit:  For multi-unit symbols, which unit to place (1=A, 2=B, …). Default 1.
             angle: Placement rotation in degrees (KiCad CCW-in-screen). Default 0.
+            mirror_y / mirror_x: Flip left-right / upside down (see
+                create_component_instance).
             project_path: Optional project directory for project-local sym-lib-table.
         """
         if project_path:
@@ -1203,6 +1214,7 @@ class DynamicSymbolLoader:
             unit=unit,
             angle=angle,
             mirror_y=mirror_y,
+            mirror_x=mirror_x,
         )
 
 

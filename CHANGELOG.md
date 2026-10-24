@@ -16,6 +16,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   boxes. A borderless text box gets KiCad's own encoding, a stroke width of
   -1 internal unit (`-0.0001`).
 
+### Improvements
+
+- **`add_schematic_component` takes `mirrorX`** (flip upside down, written as
+  `(mirror x)`) next to `mirrorY`. Both together are written as a 180° turn,
+  since KiCad never writes two mirror tokens. A kicad-cli netlist test wires a
+  mirrored op-amp unit through `connect_to_net` at all four rotations and
+  checks every label lands on its pin.
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag

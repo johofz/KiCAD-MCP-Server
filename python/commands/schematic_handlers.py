@@ -276,6 +276,9 @@ class SchematicHandlersMixin:
             # and callers had to follow up with rotate_schematic_component.
             angle = component.get("angle", 0)
             mirror_y = bool(component.get("mirrorY", False))
+            # mirrorX flips the symbol upside down: (mirror x). With mirrorY as
+            # well the loader writes a 180° turn instead of two mirror tokens.
+            mirror_x = bool(component.get("mirrorX", False))
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -302,6 +305,7 @@ class SchematicHandlersMixin:
                 unit=unit,
                 angle=angle,
                 mirror_y=mirror_y,
+                mirror_x=mirror_x,
                 project_path=derived_project_path,
             )
 
