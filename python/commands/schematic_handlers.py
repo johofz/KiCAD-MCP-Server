@@ -2661,6 +2661,218 @@ class SchematicHandlersMixin:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    @staticmethod
+    def _xy_pair(value: Any) -> Optional[List[float]]:
+        """``[x, y]`` as floats, or None when *value* is not a pair of numbers."""
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        try:
+            return [float(value[0]), float(value[1])]
+        except (TypeError, ValueError):
+            return None
+
+    def _handle_add_schematic_bus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a bus (one segment per consecutive waypoint pair) to a schematic."""
+        logger.info("Adding bus to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            waypoints = params.get("waypoints")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not isinstance(waypoints, list) or len(waypoints) < 2:
+                return {
+                    "success": False,
+                    "message": "waypoints must be a list of at least 2 [x, y] points",
+                }
+            points = [self._xy_pair(p) for p in waypoints]
+            if any(p is None for p in points):
+                return {"success": False, "message": "every waypoint must be [x, y]"}
+            if any(points[i] == points[i + 1] for i in range(len(points) - 1)):
+                return {"success": False, "message": "consecutive waypoints must differ"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            result = WireManager.add_bus(sch_file, points)
+            if result is None:
+                return {"success": False, "message": "Failed to add bus"}
+            self._reload_kicad_schematic()
+            return {
+                "success": True,
+                "message": f"Added bus with {len(result['segments'])} segment(s)",
+                **result,
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding schematic bus: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_bus_entry(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a wire-to-bus entry whose bus-side end sits on a bus."""
+        logger.info("Adding bus entry to schematic")
+        try:
+            from commands.wire_manager import _BUS_ENTRY_OFFSETS, WireManager
+
+            schematic_path = params.get("schematicPath")
+            position = self._xy_pair(params.get("position"))
+            direction = params.get("direction")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if position is None:
+                return {"success": False, "message": "position [x, y] is required"}
+            if direction not in _BUS_ENTRY_OFFSETS:
+                return {
+                    "success": False,
+                    "message": "direction must be up_left, up_right, down_left, or down_right",
+                }
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            result = WireManager.add_bus_entry(sch_file, position, direction)
+            if result is None:
+                return {"success": False, "message": "Failed to add bus entry"}
+            self._reload_kicad_schematic()
+            wire_end = result["wireEnd"]
+            return {
+                "success": True,
+                "message": (
+                    f"Added bus entry at ({position[0]}, {position[1]}); "
+                    f"connect the wire at ({wire_end['x']}, {wire_end['y']})"
+                ),
+                "position": {"x": position[0], "y": position[1]},
+                **result,
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding schematic bus entry: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_rectangle(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a graphic rectangle (e.g. a frame around a functional group)."""
+        logger.info("Adding rectangle to schematic")
+        try:
+            from commands.wire_manager import STROKE_TYPES, WireManager
+
+            schematic_path = params.get("schematicPath")
+            start = self._xy_pair(params.get("start"))
+            end = self._xy_pair(params.get("end"))
+            stroke_width = params.get("strokeWidth", 0.1524)
+            stroke_type = params.get("strokeType", "dash")
+            fill = params.get("fill", "none")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if start is None or end is None:
+                return {"success": False, "message": "start [x, y] and end [x, y] are required"}
+            if start[0] == end[0] or start[1] == end[1]:
+                return {
+                    "success": False,
+                    "message": "rectangle must have non-zero width and height",
+                }
+            if not isinstance(stroke_width, (int, float)) or stroke_width < 0:
+                return {"success": False, "message": "strokeWidth must be a number >= 0"}
+            if stroke_type not in STROKE_TYPES:
+                return {
+                    "success": False,
+                    "message": f"strokeType must be one of {', '.join(STROKE_TYPES)}",
+                }
+            if fill not in ("none", "background"):
+                return {"success": False, "message": "fill must be none or background"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            if not WireManager.add_rectangle(
+                sch_file, start, end, stroke_width=stroke_width, stroke_type=stroke_type, fill=fill
+            ):
+                return {"success": False, "message": "Failed to add rectangle"}
+            self._reload_kicad_schematic()
+            return {
+                "success": True,
+                "message": f"Added rectangle ({start[0]}, {start[1]}) - ({end[0]}, {end[1]})",
+                "start": {"x": start[0], "y": start[1]},
+                "end": {"x": end[0], "y": end[1]},
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding schematic rectangle: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_text_box(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a text box (text wrapped inside an optional border) to a schematic."""
+        logger.info("Adding text box to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            text = params.get("text")
+            position = self._xy_pair(params.get("position"))
+            size = self._xy_pair(params.get("size"))
+            font_size = params.get("fontSize", 1.27)
+            border = params.get("border", True)
+            bold = params.get("bold", False)
+            justify = params.get("justify", "left")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not text:
+                return {"success": False, "message": "text is required"}
+            if position is None:
+                return {"success": False, "message": "position [x, y] is required"}
+            if size is None or size[0] <= 0 or size[1] <= 0:
+                return {"success": False, "message": "size [width, height] must be positive"}
+            if not isinstance(font_size, (int, float)) or font_size <= 0:
+                return {"success": False, "message": "fontSize must be positive"}
+            if justify not in ("left", "center", "right"):
+                return {"success": False, "message": "justify must be left, center, or right"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            if not WireManager.add_text_box(
+                sch_file,
+                text,
+                position,
+                size,
+                font_size=font_size,
+                border=bool(border),
+                bold=bool(bold),
+                justify=justify,
+            ):
+                return {"success": False, "message": "Failed to add text box"}
+            self._reload_kicad_schematic()
+            return {
+                "success": True,
+                "message": f"Added text box at ({position[0]}, {position[1]})",
+                "position": {"x": position[0], "y": position[1]},
+                "size": {"width": size[0], "height": size[1]},
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding schematic text box: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
     def _handle_add_schematic_hierarchical_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a hierarchical label to a sub-sheet schematic."""
         logger.info("Adding hierarchical label to schematic")

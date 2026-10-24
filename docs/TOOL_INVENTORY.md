@@ -195,7 +195,7 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (46 tools)
+## Schematic (50 tools)
 
 _Source: `src/tools/schematic.ts`_
 
@@ -522,7 +522,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `routing.ts`             | Routing                                | 17      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
-| `schematic.ts`           | Schematic                              | 46      |
+| `schematic.ts`           | Schematic                              | 50      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |

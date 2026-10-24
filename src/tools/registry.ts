@@ -167,6 +167,10 @@ export const toolCategories: ToolCategory[] = [
       "get_net_at_point",
       "get_schematic_view_region",
       "run_erc",
+      "add_schematic_text_box",
+      "add_schematic_rectangle",
+      "add_schematic_bus",
+      "add_schematic_bus_entry",
     ],
   },
   {

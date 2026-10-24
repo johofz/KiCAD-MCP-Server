@@ -6,13 +6,14 @@ kicad-skip's wire API doesn't support creating wires with standard parameters, s
 manipulate the .kicad_sch file directly.
 """
 
+import copy
 import logging
 import math
 import re
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
@@ -41,7 +42,33 @@ _SYM_MIRROR = Symbol("mirror")
 _SYM_PIN = Symbol("pin")
 _SYM_SYMBOL = Symbol("symbol")
 _SYM_UNIT = Symbol("unit")
+_SYM_BUS = Symbol("bus")
+_SYM_BUS_ENTRY = Symbol("bus_entry")
+_SYM_SIZE = Symbol("size")
 _IU_PER_MM = 10000
+
+#: Bus entry direction -> (dx, dy) from the bus point to the wire end. KiCad's
+#: entries are 2.54 mm (100 mil) square; "up" is negative Y on the canvas.
+_BUS_ENTRY_OFFSETS = {
+    "up_left": (-2.54, -2.54),
+    "up_right": (2.54, -2.54),
+    "down_left": (-2.54, 2.54),
+    "down_right": (2.54, 2.54),
+}
+
+#: Stroke styles accepted by KiCad 9 for graphic shapes (rectangle, text box).
+STROKE_TYPES = ("solid", "dash", "dot", "dash_dot", "dash_dot_dot")
+
+#: KiCad stores "no border" on a text box as a stroke width of -1 internal unit
+#: (DIALOG_TEXT_PROPERTIES::TransferDataFromWindow); schematic IU are 100 nm.
+_NO_BORDER_WIDTH = -0.0001
+
+
+def _fmt_mm(value: float) -> str:
+    """Format a millimetre value as KiCad writes it: at most 4 decimals, no
+    trailing zeros, no ``-0`` (e.g. 2.5400000000000005 -> '2.54', 10.0 -> '10')."""
+    text = f"{round(float(value), 4):.4f}".rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
 
 
 def _find_insertion_point(content: str) -> int:
@@ -1122,6 +1149,330 @@ class WireManager:
             return True
         except Exception as e:
             logger.error(f"Error adding text: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return False
+
+    # ------------------------------------------------------------------ #
+    # Buses and bus entries
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _parse_bus(item: Any) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+        """Return the two end points of a ``(bus ...)`` item, or None for anything else."""
+        if not (isinstance(item, list) and len(item) >= 2 and item[0] == _SYM_BUS):
+            return None
+        for part in item[1:]:
+            if isinstance(part, list) and part and part[0] == _SYM_PTS:
+                found = [
+                    (float(p[1]), float(p[2]))
+                    for p in part[1:]
+                    if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
+                ]
+                if len(found) >= 2:
+                    return found[0], found[-1]
+        return None
+
+    @staticmethod
+    def _point_strictly_on_segment(
+        px: float,
+        py: float,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        eps: float = 1e-6,
+    ) -> bool:
+        """True if (px, py) lies on the segment (x1,y1)-(x2,y2) but on neither end.
+
+        Unlike _point_strictly_on_wire this also accepts diagonal segments:
+        KiCad lets buses run at any angle.
+        """
+        dx, dy = x2 - x1, y2 - y1
+        length_sq = dx * dx + dy * dy
+        if length_sq < eps * eps:
+            return False
+        # Distance from the line, then the position along it.
+        if abs((px - x1) * dy - (py - y1) * dx) / math.sqrt(length_sq) > eps:
+            return False
+        t = ((px - x1) * dx + (py - y1) * dy) / length_sq
+        margin = eps / math.sqrt(length_sq)
+        return margin < t < 1 - margin
+
+    @staticmethod
+    def _make_bus_sexp(start: List[float], end: List[float]) -> list:
+        return [
+            _SYM_BUS,
+            [_SYM_PTS, [_SYM_XY, start[0], start[1]], [_SYM_XY, end[0], end[1]]],
+            [_SYM_STROKE, [_SYM_WIDTH, 0], [_SYM_TYPE, Symbol("default")]],
+            [_SYM_UUID, str(uuid.uuid4())],
+        ]
+
+    @staticmethod
+    def _bus_entry_points(sch_data: list) -> List[Tuple[float, float]]:
+        """The bus-side point, ``(at x y)``, of every bus entry in sch_data."""
+        points: List[Tuple[float, float]] = []
+        for item in sch_data:
+            if not (isinstance(item, list) and item and item[0] == _SYM_BUS_ENTRY):
+                continue
+            at = next(
+                (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+                None,
+            )
+            if at is not None:
+                points.append((float(at[1]), float(at[2])))
+        return points
+
+    @staticmethod
+    def _split_segment(
+        start: List[float], end: List[float], points: List[Tuple[float, float]]
+    ) -> List[Tuple[List[float], List[float]]]:
+        """Cut start-end at every point of *points* that lies strictly inside it."""
+        x1, y1 = float(start[0]), float(start[1])
+        x2, y2 = float(end[0]), float(end[1])
+        inside = {
+            (round(px * _IU_PER_MM), round(py * _IU_PER_MM)): (px, py)
+            for px, py in points
+            if WireManager._point_strictly_on_segment(px, py, x1, y1, x2, y2)
+        }
+        if not inside:
+            return [([x1, y1], [x2, y2])]
+        dx, dy = x2 - x1, y2 - y1
+        ordered = sorted(inside.values(), key=lambda p: (p[0] - x1) * dx + (p[1] - y1) * dy)
+        chain = [[x1, y1]] + [[px, py] for px, py in ordered] + [[x2, y2]]
+        return [(chain[i], chain[i + 1]) for i in range(len(chain) - 1)]
+
+    @staticmethod
+    def _break_buses_at_point(sch_data: list, position: List[float]) -> int:
+        """Split every bus segment whose interior contains *position*.
+
+        KiCad attaches a bus entry (and another bus's end) only to the END
+        points of a bus segment: an entry in the middle of a segment is
+        reported "Unconnected wire to bus entry". The split keeps the
+        segment's stroke; each half gets a new uuid. Returns the splits made.
+        """
+        px, py = float(position[0]), float(position[1])
+        splits = 0
+        i = 0
+        while i < len(sch_data):
+            parsed = WireManager._parse_bus(sch_data[i])
+            if parsed is not None:
+                (x1, y1), (x2, y2) = parsed
+                if WireManager._point_strictly_on_segment(px, py, x1, y1, x2, y2):
+                    halves = []
+                    for a, b in (((x1, y1), (px, py)), ((px, py), (x2, y2))):
+                        half = copy.deepcopy(sch_data[i])
+                        for j, part in enumerate(half):
+                            if isinstance(part, list) and part and part[0] == _SYM_PTS:
+                                half[j] = [_SYM_PTS, [_SYM_XY, a[0], a[1]], [_SYM_XY, b[0], b[1]]]
+                            elif isinstance(part, list) and part and part[0] == _SYM_UUID:
+                                half[j] = [_SYM_UUID, str(uuid.uuid4())]
+                        halves.append(half)
+                    sch_data[i : i + 1] = halves
+                    logger.info(f"Split bus ({x1},{y1})->({x2},{y2}) at ({px},{py})")
+                    splits += 1
+                    i += 2
+                    continue
+            i += 1
+        return splits
+
+    @staticmethod
+    def _insertion_index(sch_data: list) -> int:
+        """Index before (sheet_instances ...), or the end on a sub-sheet without one."""
+        for i, item in enumerate(sch_data):
+            if isinstance(item, list) and item and item[0] == _SYM_SHEET_INSTANCES:
+                return i
+        return len(sch_data)
+
+    @staticmethod
+    def add_bus(schematic_path: Path, waypoints: List[List[float]]) -> Optional[Dict[str, Any]]:
+        """Add a bus through *waypoints*: one ``(bus ...)`` per consecutive pair.
+
+        A new segment is cut at every existing bus entry whose bus-side point
+        lies inside it, so each entry sits on a segment end where KiCad
+        connects it. An existing bus that one of the new outer end points
+        lands in the middle of is split there too (a bus T-connection), as
+        add_wire does for wires.
+
+        Returns {"segments": [[x1, y1, x2, y2], ...], "splitExisting": n},
+        or None on error.
+        """
+        try:
+            if len(waypoints) < 2:
+                logger.error("A bus needs at least 2 waypoints")
+                return None
+
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = sexpdata.loads(f.read())
+
+            split_existing = 0
+            for pt in (waypoints[0], waypoints[-1]):
+                split_existing += WireManager._break_buses_at_point(sch_data, pt)
+
+            entry_points = WireManager._bus_entry_points(sch_data)
+            segments: List[Tuple[List[float], List[float]]] = []
+            for i in range(len(waypoints) - 1):
+                segments.extend(
+                    WireManager._split_segment(waypoints[i], waypoints[i + 1], entry_points)
+                )
+
+            index = WireManager._insertion_index(sch_data)
+            for start, end in reversed(segments):
+                sch_data.insert(index, WireManager._make_bus_sexp(start, end))
+
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(kicad_dumps(sch_data))
+
+            logger.info(f"Added bus with {len(segments)} segment(s) to {schematic_path.name}")
+            return {
+                "segments": [[s[0], s[1], e[0], e[1]] for s, e in segments],
+                "splitExisting": split_existing,
+            }
+        except Exception as e:
+            logger.error(f"Error adding bus: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return None
+
+    @staticmethod
+    def add_bus_entry(
+        schematic_path: Path, position: List[float], direction: str
+    ) -> Optional[Dict[str, Any]]:
+        """Add a wire-to-bus entry whose bus-side end is *position*.
+
+        KiCad's ``(bus_entry (at X Y) (size DX DY))`` runs from the bus point
+        (at) to the wire end (at + size). Any bus segment whose interior holds
+        the bus point is split there, because KiCad only attaches entries to
+        segment end points.
+
+        Returns {"wireEnd": {"x", "y"}, "size": [dx, dy], "splitExisting": n},
+        or None on error.
+        """
+        try:
+            dx, dy = _BUS_ENTRY_OFFSETS[direction]
+            x, y = float(position[0]), float(position[1])
+
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = sexpdata.loads(f.read())
+
+            split_existing = WireManager._break_buses_at_point(sch_data, [x, y])
+            entry = [
+                _SYM_BUS_ENTRY,
+                [_SYM_AT, x, y],
+                [_SYM_SIZE, dx, dy],
+                [_SYM_STROKE, [_SYM_WIDTH, 0], [_SYM_TYPE, Symbol("default")]],
+                [_SYM_UUID, str(uuid.uuid4())],
+            ]
+            sch_data.insert(WireManager._insertion_index(sch_data), entry)
+
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(kicad_dumps(sch_data))
+
+            wire_end = {"x": round(x + dx, 4), "y": round(y + dy, 4)}
+            logger.info(f"Added bus entry at ({x}, {y}) -> {wire_end}")
+            return {"wireEnd": wire_end, "size": [dx, dy], "splitExisting": split_existing}
+        except Exception as e:
+            logger.error(f"Error adding bus entry: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return None
+
+    # ------------------------------------------------------------------ #
+    # Graphic shapes: rectangle and text box
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def add_rectangle(
+        schematic_path: Path,
+        start: List[float],
+        end: List[float],
+        stroke_width: float = 0.1524,
+        stroke_type: str = "dash",
+        fill: str = "none",
+    ) -> bool:
+        """Add a graphic rectangle (no electrical meaning), e.g. a group frame."""
+        try:
+            rect_sexp = (
+                f"\t(rectangle\n"
+                f"\t\t(start {_fmt_mm(start[0])} {_fmt_mm(start[1])})\n"
+                f"\t\t(end {_fmt_mm(end[0])} {_fmt_mm(end[1])})\n"
+                f"\t\t(stroke\n"
+                f"\t\t\t(width {_fmt_mm(stroke_width)})\n"
+                f"\t\t\t(type {stroke_type})\n"
+                f"\t\t)\n"
+                f"\t\t(fill\n"
+                f"\t\t\t(type {fill})\n"
+                f"\t\t)\n"
+                f'\t\t(uuid "{uuid.uuid4()}")\n'
+                f"\t)\n"
+            )
+            _text_insert(schematic_path, rect_sexp)
+            logger.info(f"Added rectangle {start} -> {end}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding rectangle: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return False
+
+    @staticmethod
+    def add_text_box(
+        schematic_path: Path,
+        text: str,
+        position: List[float],
+        size: List[float],
+        font_size: float = 1.27,
+        border: bool = True,
+        bold: bool = False,
+        justify: str = "left",
+    ) -> bool:
+        """Add a text box (SCH_TEXTBOX): wrapped text inside an optional border.
+
+        *position* is the top-left corner. The margins are the ones KiCad gives
+        a new text box (SCH_TEXTBOX::GetLegacyTextMargin): half the stroke
+        width plus 0.75 x the text height. Without a border the stroke width is
+        -1 IU, which is how KiCad's text dialog records "no border".
+        """
+        try:
+            # Same escaping as add_text: KiCad refuses raw newlines in a string.
+            text_escaped = escape_sexpr_string(text)
+            stroke_width = 0 if border else _NO_BORDER_WIDTH
+            margin = _fmt_mm(max(stroke_width, 0) / 2 + 0.75 * font_size)
+            font_attrs = f"\n\t\t\t\t(size {_fmt_mm(font_size)} {_fmt_mm(font_size)})"
+            if bold:
+                font_attrs += "\n\t\t\t\t(bold yes)"
+            # KiCad omits the horizontal keyword for centred text.
+            justify_tokens = "top" if justify == "center" else f"{justify} top"
+            box_sexp = (
+                f'\t(text_box "{text_escaped}"\n'
+                f"\t\t(exclude_from_sim no)\n"
+                f"\t\t(at {_fmt_mm(position[0])} {_fmt_mm(position[1])} 0)\n"
+                f"\t\t(size {_fmt_mm(size[0])} {_fmt_mm(size[1])})\n"
+                f"\t\t(margins {margin} {margin} {margin} {margin})\n"
+                f"\t\t(stroke\n"
+                f"\t\t\t(width {_fmt_mm(stroke_width)})\n"
+                f"\t\t\t(type {'solid' if border else 'default'})\n"
+                f"\t\t)\n"
+                f"\t\t(fill\n"
+                f"\t\t\t(type none)\n"
+                f"\t\t)\n"
+                f"\t\t(effects\n"
+                f"\t\t\t(font{font_attrs}\n"
+                f"\t\t\t)\n"
+                f"\t\t\t(justify {justify_tokens})\n"
+                f"\t\t)\n"
+                f'\t\t(uuid "{uuid.uuid4()}")\n'
+                f"\t)\n"
+            )
+            _text_insert(schematic_path, box_sexp)
+            logger.info(f"Added text box at {position} size {size}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding text box: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
