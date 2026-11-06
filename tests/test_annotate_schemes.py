@@ -380,7 +380,7 @@ class TestAnnotateHandler:
 
 
 @pytest.mark.integration
-def test_kicad_cli_netlist_after_sheet_x100(tmp_path):
+def test_kicad_cli_netlist_after_sheet_x100(tmp_path, sch_format):
     cli = resolve_kicad_cli()
     if not cli:
         pytest.skip("kicad-cli not available")
@@ -405,6 +405,7 @@ def test_kicad_cli_netlist_after_sheet_x100(tmp_path):
         encoding="utf-8",
     )
     chan.write_text(header + f'\t(uuid "{CHAN}")\n\t(paper "A4")\n\t(lib_symbols)\n)\n')
+    sch_format.restamp(root, chan)
     hier = SchematicHierarchyCommands(SimpleNamespace())
     for i in range(2):
         assert hier.add_hierarchical_sheet(

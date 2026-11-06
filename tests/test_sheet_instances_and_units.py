@@ -446,7 +446,7 @@ def _netlist(cli: str, root: Path) -> tuple:
 
 
 @pytest.mark.integration
-def test_kicad_cli_one_quad_opamp_across_four_sheet_uses(tmp_path):
+def test_kicad_cli_one_quad_opamp_across_four_sheet_uses(tmp_path, sch_format):
     cli = resolve_kicad_cli()
     if not cli:
         pytest.skip("kicad-cli not available")
@@ -460,6 +460,7 @@ def test_kicad_cli_one_quad_opamp_across_four_sheet_uses(tmp_path):
         pytest.skip("KiCad's Amplifier_Operational symbol library not installed")
 
     h = _hierarchy(tmp_path, uses=4)
+    sch_format.restamp(h["root"], h["chan"])
     DynamicSymbolLoader(project_path=tmp_path).add_component(
         h["chan"],
         "Amplifier_Operational",

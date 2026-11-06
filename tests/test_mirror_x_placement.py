@@ -187,7 +187,7 @@ def _netlist_pins(cli: str, sch: Path) -> Dict[tuple, str]:
 @pytest.mark.integration
 @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
 @pytest.mark.parametrize("mirror", ["x", "xy"])
-def test_mirrored_opamp_pins_match_kicad_cli(tmp_path, rotation, mirror):
+def test_mirrored_opamp_pins_match_kicad_cli(tmp_path, rotation, mirror, sch_format):
     cli = _kicad_cli_or_skip()
     from commands.connection_schematic import ConnectionManager
     from commands.wire_manager import WireManager
@@ -200,6 +200,7 @@ def test_mirrored_opamp_pins_match_kicad_cli(tmp_path, rotation, mirror):
         '\t(sheet_instances (path "/" (page "1")))\n)\n',
         encoding="utf-8",
     )
+    sch_format.restamp(sch)
     iface = _make_iface()
     result = iface._handle_add_schematic_component(
         {

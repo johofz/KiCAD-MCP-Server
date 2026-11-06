@@ -120,7 +120,7 @@ class TestSetTitleBlock:
 
 
 @pytest.mark.integration
-def test_kicad_cli_reads_the_title_block(tmp_path, iface):
+def test_kicad_cli_reads_the_title_block(tmp_path, iface, sch_format):
     cli = resolve_kicad_cli()
     if not cli:
         pytest.skip("kicad-cli not available")
@@ -129,6 +129,7 @@ def test_kicad_cli_reads_the_title_block(tmp_path, iface):
         pytest.skip("the fixture uses the KiCad 9 file format")
     sch = tmp_path / "t.kicad_sch"
     sch.write_text(SHEET, encoding="utf-8")
+    sch_format.restamp(sch)
     _set(iface, sch, title="Titel X", revision="R7", company="Firma Y", comments={"1": "K1"})
 
     subprocess.run(

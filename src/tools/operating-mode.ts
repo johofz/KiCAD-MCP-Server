@@ -142,6 +142,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "list_schematic_nets",
   "list_schematic_texts",
   "list_schematic_wires",
+  "list_sheet_instances",
   "run_erc",
   "validate_schematic",
   "validate_symbol_library",

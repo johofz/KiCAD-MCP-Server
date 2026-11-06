@@ -179,7 +179,7 @@ class TestEditEveryUnit:
 
 
 @pytest.mark.integration
-def test_kicad_cli_netlist_sees_one_renamed_part(tmp_path, iface):
+def test_kicad_cli_netlist_sees_one_renamed_part(tmp_path, iface, sch_format):
     """Rename and re-value a five-unit op-amp: kicad-cli must list ONE part.
 
     With only the first unit edited, the netlist listed U501 (unit A) and U1
@@ -205,6 +205,7 @@ def test_kicad_cli_netlist_sees_one_renamed_part(tmp_path, iface):
         '\t(sheet_instances (path "/" (page "1")))\n)\n',
         encoding="utf-8",
     )
+    sch_format.restamp(sch)
     for unit in range(1, 6):
         DynamicSymbolLoader(project_path=tmp_path).add_component(
             sch,
@@ -235,7 +236,7 @@ def test_kicad_cli_netlist_sees_one_renamed_part(tmp_path, iface):
     )
     assert "Failed to load schematic" not in run.stdout + run.stderr
     comps = re.findall(
-        r'\(comp \(ref "([^"]+)"\)\s*\(value "([^"]*)"\)\s*\(footprint "([^"]*)"\)',
+        r'\(comp\s*\(ref "([^"]+)"\)\s*\(value "([^"]*)"\)\s*\(footprint "([^"]*)"\)',
         net.read_text(encoding="utf-8"),
     )
     assert comps == [("U501", "OPA4192", "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm")], comps

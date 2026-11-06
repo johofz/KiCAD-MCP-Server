@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.3
-**Tools registered on the server:** 247
-**Tools indexed for keyword discovery:** 247 in 20 categories
-**Last updated:** 2026-10-01
+**Tools registered on the server:** 254
+**Tools indexed for keyword discovery:** 254 in 20 categories
+**Last updated:** 2026-11-06
 
 ## How to read this document
 
@@ -246,6 +246,11 @@ _Source: `src/tools/schematic.ts`_
 | `add_schematic_hierarchical_label`    | Add hierarchical label for multi-sheet connections                                                                                                   | `schematic_hierarchy`   |
 | `list_schematic_texts`                | List all text annotations (with optional filter)                                                                                                     | `schematic`             |
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
+| `add_schematic_bus`                   | Draw a bus through two or more waypoints.                                                                                                            | `schematic`             |
+| `add_schematic_bus_entry`             | Add a 45° wire-to-bus entry.                                                                                                                         | `schematic`             |
+| `add_schematic_rectangle`             | Draw a graphic rectangle on the schematic, such as a dashed boundary frame around a functional group.                                                | `schematic`             |
+| `set_schematic_title_block`           | Set the title block of one schematic sheet: title, date, revision, company and comments 1-9.                                                         | `schematic`             |
+| `add_schematic_text_box`              | Add a text box: text inside a rectangle of the given size, with an optional border.                                                                  | `schematic`             |
 | `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | `schematic_hierarchy`   |
 
 ---
@@ -544,11 +549,11 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **247** |
+| **Total**                |                                        | **254** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 247 of the 247 registered tools.
+These are the categories `search_tools` searches. They cover 254 of the 254 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -556,11 +561,11 @@ These are the categories `search_tools` searches. They cover 247 of the 247 regi
 | `component`                | 24            |
 | `export`                   | 27            |
 | `drc`                      | 8             |
-| `schematic`                | 36            |
+| `schematic`                | 41            |
 | `library`                  | 9             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
-| `schematic_hierarchy`      | 7             |
+| `schematic_hierarchy`      | 9             |
 | `schematic_layout`         | 12            |
 | `schematic_batch`          | 6             |
 | `routing`                  | 14            |
@@ -572,6 +577,6 @@ These are the categories `search_tools` searches. They cover 247 of the 247 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **247**       |
+| **Indexed total**          | **254**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **247**       |
+| **Registered total**       | **254**       |

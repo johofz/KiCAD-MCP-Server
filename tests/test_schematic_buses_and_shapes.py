@@ -526,7 +526,7 @@ class TestHandleAddSchematicTextBox:
 
 
 @pytest.mark.integration
-def test_kicad_cli_loads_buses_entries_and_shapes(tmp_path):
+def test_kicad_cli_loads_buses_entries_and_shapes(tmp_path, sch_format):
     cli = resolve_kicad_cli()
     if not cli:
         pytest.skip("kicad-cli not available")
@@ -538,6 +538,7 @@ def test_kicad_cli_loads_buses_entries_and_shapes(tmp_path):
 
     sch = tmp_path / "bus.kicad_sch"
     sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+    sch_format.restamp(sch)
     # Entries placed before and after the bus: both orders must end up on
     # segment end points.
     WireManager.add_bus_entry(sch, [50.8, 60.96], "down_right")

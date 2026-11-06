@@ -74,3 +74,57 @@ except ImportError:
 
     skip_mod.Schematic = _FakeSchematic  # type: ignore[attr-defined]
     sys.modules["skip"] = skip_mod
+
+
+# ---------------------------------------------------------------------------
+# kicad-cli integration tests: run each in both schematic file formats
+# ---------------------------------------------------------------------------
+import re as _re  # noqa: E402
+import subprocess as _subprocess  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+def _kicad_cli_major() -> int:
+    from utils.kicad_cli import resolve_kicad_cli
+
+    cli = resolve_kicad_cli()
+    if not cli:
+        return 0
+    out = _subprocess.run([cli, "version"], capture_output=True, text=True).stdout
+    m = _re.match(r"\s*(\d+)", out or "")
+    return int(m.group(1)) if m else 0
+
+
+class _SchFormat:
+    """The schematic file format a kicad-cli test writes its fixtures in."""
+
+    def __init__(self, major: int) -> None:
+        self.major = major
+
+    def restamp(self, *paths: Path) -> None:
+        """Give each schematic on disk this format's header line."""
+        from utils.sch_format import apply_schematic_header
+
+        for path in paths:
+            path.write_text(
+                apply_schematic_header(path.read_text(encoding="utf-8")), encoding="utf-8"
+            )
+
+
+@pytest.fixture(params=[9, 10], ids=["kicad9-format", "kicad10-format"])
+def sch_format(request, monkeypatch):
+    """Run a kicad-cli test once per file format the installed KiCad can read.
+
+    KiCad 10 still loads KiCad 9 files, so the KiCad 9 variant runs on both;
+    the KiCad 10 variant is skipped where kicad-cli is older than 10. New
+    schematics the tools create follow the same format (KICAD_SCH_FORMAT).
+    """
+    major = request.param
+    cli_major = _kicad_cli_major()
+    if cli_major == 0:
+        pytest.skip("kicad-cli not available")
+    if cli_major < major:
+        pytest.skip(f"kicad-cli {cli_major} cannot read the KiCad {major} format")
+    monkeypatch.setenv("KICAD_SCH_FORMAT", str(major))
+    return _SchFormat(major)

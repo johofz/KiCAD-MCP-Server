@@ -4,17 +4,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
-### New tools
-
-- **`add_schematic_bus`, `add_schematic_bus_entry`.** Buses and 45° wire-to-bus
-  entries in the KiCad 9 format. KiCad attaches an entry only to a bus segment's
-  end point, so a new bus is cut at every existing entry on it and an entry
-  placed on an existing bus splits that segment, as eeschema does. The entry
-  tool returns the wire-end coordinates.
-- **`add_schematic_rectangle`, `add_schematic_text_box`.** Graphic frames
-  around functional groups (dashed by default) and bordered or borderless text
-  boxes. A borderless text box gets KiCad's own encoding, a stroke width of
-  -1 internal unit (`-0.0001`).
 ### New Features
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing
@@ -32,6 +21,58 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - The mode combines with `KICAD_MCP_TOOLBOXES`, and read-only tools carry
     MCP's `readOnlyHint` annotation in every mode.
 
+### New tools
+
+- **`add_schematic_bus`, `add_schematic_bus_entry`.** Buses and 45° wire-to-bus
+  entries in KiCad's file format. KiCad attaches an entry only to a bus segment's
+  end point, so a new bus is cut at every existing entry on it and an entry
+  placed on an existing bus splits that segment, as eeschema does. The entry
+  tool returns the wire-end coordinates.
+- **`add_schematic_rectangle`, `add_schematic_text_box`.** Graphic frames
+  around functional groups (dashed by default) and bordered or borderless text
+  boxes. A borderless text box gets KiCad's own encoding, a stroke width of
+  -1 internal unit (`-0.0001`).
+- **`set_schematic_title_block`.** Title, date, revision, company and comments
+  1-9 of one sheet. Only the fields given change, an empty string removes one.
+- **`list_sheet_instances`, `set_symbol_instance`.** The first lists every use
+  of every sheet below a root (reused sheets once per use) with the instance
+  path symbols use, the sheet name, file, page and parent path. The second sets
+  the reference and/or unit a symbol has in one use, so one quad op-amp symbol
+  on a sheet used four times can be units A-D of one U501; kicad-cli 9 and 10
+  netlist that as one part with the right pins in each use.
+
+### Improvements
+
+- **New schematics are written in the installed KiCad's file format.**
+  `create_project`, `create_schematic` and the Eagle importer always wrote the
+  KiCad 10 header (`version 20260101`). KiCad 9 refuses such files with
+  "Failed to load schematic", which also broke ERC, netlist export and
+  `sync_schematic_to_board` (0 footprints added, silently). The header now
+  follows the loaded pcbnew's major version (9 -> `20250114`, otherwise
+  `20260101`); `KICAD_SCH_FORMAT=9|10` overrides the detection.
+- **`add_schematic_component` takes `mirrorX`** (flip upside down, written as
+  `(mirror x)`) next to `mirrorY`. Both together are written as a 180° turn,
+  since KiCad never writes two mirror tokens. A kicad-cli netlist test wires a
+  mirrored op-amp unit through `connect_to_net` at all four rotations and
+  checks every label lands on its pin.
+- **`set_schematic_property_position` and `batch_set_schematic_property_positions`
+  take `orientation` and `justify`** (horizontal/vertical, left/right/center as
+  seen on the sheet). eeschema turns a field's text with its symbol and swaps
+  left and right for rotations of 90° and 180° and for a Y mirror; the server
+  converts for that, so `orientation: "horizontal"` reads horizontally on a
+  vertical resistor too.
+- **`edit_schematic_component` takes `inBom`, `onBoard`, `dnp` and
+  `excludeFromSim`**, on every placed unit. A test point is `in_bom yes` in
+  KiCad's library while its pad-only footprint is excluded from the BOM; this
+  sets the symbol to match.
+- **`annotate_schematic` takes `scheme` and `reset`.** `scheme: "sheet_x100"`
+  numbers the parts on page P as P*100+1, P*100+2, ... per prefix (R501, C501,
+  #PWR501 on page 5), ordered top-to-bottom then left-to-right, each use of a
+  reused sheet on its own page. Units that share a reference stay one part,
+  numbered on the lowest page that holds one of them. `reset: true` numbers
+  every symbol again. Both modes cover the whole project and return the full
+  mapping; the default call is unchanged.
+
 ### Bug Fixes
 
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
@@ -46,6 +87,43 @@ All notable changes to the KiCAD MCP Server project are documented here.
   filled them in, so the model received the literal `{{requirements}}` and the
   user's text was dropped. All 18 prompts now substitute their arguments; an
   optional one left out reads "(not provided)".
+- **Pins and wire ends in the middle of a wire are connected.** KiCad connects
+  wires only at their end points. `add_schematic_wire` now splits every wire at
+  the pins and wire ends lying on it, and placing a symbol splits the wires
+  under its pins, as eeschema does. Before, a wire drawn across a pin, or a
+  decoupling capacitor placed on a rail, stayed unconnected ("Pin not
+  connected" in ERC). Junctions are now also written on sub-sheets, which have
+  no `(sheet_instances)` block.
+- **Field positions of placed symbols.** Library field positions are Y-up like
+  pins but were used as screen offsets: GND showed its name above the symbol,
+  supply symbols below the arrow, capacitors had the value above the reference.
+  Fields now take the same transform as pins.
+- **Placed symbols keep the library's BOM flags.** Placement always wrote
+  `(in_bom yes) (on_board yes) (exclude_from_sim no)`. Test points, solder
+  jumpers and mounting holes are `in_bom no` in KiCad's libraries, and their
+  footprints are excluded from the BOM, so DRC with schematic parity reported a
+  mismatch for every one of them.
+- **`create_schematic` quotes the sheet UUID** (`(uuid "...")`), as eeschema
+  writes it.
+- **Sheet pin names read into the sheet.** `add_sheet_pin` wrote the
+  justification the wrong way round, so names were drawn outside the sheet box
+  over the wires.
+- **Editing a multi-unit part edits every unit.** `edit_schematic_component`
+  (value, footprint, `newReference`, properties) and
+  `set_/remove_schematic_component_property` stopped at the first placed unit,
+  so a quad op-amp renamed from U1 to U501 came out of kicad-cli's netlist as
+  two parts. All placed units with the reference are now changed; positions
+  given for fields keep their offset from each unit's origin.
+
+### Tooling
+
+- **kicad-cli tests run in both file formats.** Each kicad-cli integration
+  test for the tools above runs once with a KiCad 9 and once with a KiCad 10
+  schematic header (fixture `sch_format`); the KiCad 10 run is skipped where
+  kicad-cli is older. KiCad 10 writes `(comp` and `(ref ...)` of a netlist
+  on separate lines, which the multi-unit netlist test now accepts.
+- **`list_sheet_instances` is allowed in readonly mode.** It only reads the
+  sheet tree; the other new tools edit the schematic and stay hidden there.
 
 ## [2.8.3] - 2026-10-25
 
@@ -145,61 +223,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
   bounding boxes now follow it. Both tools reject an unknown unit instead of
   quietly using mm. Calls without these parameters return exactly what they
   did before.
-
-### Improvements
-
-- **`add_schematic_component` takes `mirrorX`** (flip upside down, written as
-  `(mirror x)`) next to `mirrorY`. Both together are written as a 180° turn,
-  since KiCad never writes two mirror tokens. A kicad-cli netlist test wires a
-  mirrored op-amp unit through `connect_to_net` at all four rotations and
-  checks every label lands on its pin.
-- **`set_schematic_property_position` and `batch_set_schematic_property_positions`
-  take `orientation` and `justify`** (horizontal/vertical, left/right/center as
-  seen on the sheet). eeschema turns a field's text with its symbol and swaps
-  left and right for rotations of 90° and 180° and for a Y mirror; the server
-  converts for that, so `orientation: "horizontal"` reads horizontally on a
-  vertical resistor too.
-- **`edit_schematic_component` takes `inBom`, `onBoard`, `dnp` and
-  `excludeFromSim`**, on every placed unit. A test point is `in_bom yes` in
-  KiCad's library while its pad-only footprint is excluded from the BOM; this
-  sets the symbol to match.
-- **`annotate_schematic` takes `scheme` and `reset`.** `scheme: "sheet_x100"`
-  numbers the parts on page P as P*100+1, P*100+2, ... per prefix (R501, C501,
-  #PWR501 on page 5), ordered top-to-bottom then left-to-right, each use of a
-  reused sheet on its own page. Units that share a reference stay one part,
-  numbered on the lowest page that holds one of them. `reset: true` numbers
-  every symbol again. Both modes cover the whole project and return the full
-  mapping; the default call is unchanged.
-
-### Bug Fixes
-
-- **Pins and wire ends in the middle of a wire are connected.** KiCad connects
-  wires only at their end points. `add_schematic_wire` now splits every wire at
-  the pins and wire ends lying on it, and placing a symbol splits the wires
-  under its pins, as eeschema does. Before, a wire drawn across a pin, or a
-  decoupling capacitor placed on a rail, stayed unconnected ("Pin not
-  connected" in ERC). Junctions are now also written on sub-sheets, which have
-  no `(sheet_instances)` block.
-- **Field positions of placed symbols.** Library field positions are Y-up like
-  pins but were used as screen offsets: GND showed its name above the symbol,
-  supply symbols below the arrow, capacitors had the value above the reference.
-  Fields now take the same transform as pins.
-- **Placed symbols keep the library's BOM flags.** Placement always wrote
-  `(in_bom yes) (on_board yes) (exclude_from_sim no)`. Test points, solder
-  jumpers and mounting holes are `in_bom no` in KiCad's libraries, and their
-  footprints are excluded from the BOM, so DRC with schematic parity reported a
-  mismatch for every one of them.
-- **`create_schematic` quotes the sheet UUID** (`(uuid "...")`), as eeschema
-  writes it.
-- **Sheet pin names read into the sheet.** `add_sheet_pin` wrote the
-  justification the wrong way round, so names were drawn outside the sheet box
-  over the wires.
-- **Editing a multi-unit part edits every unit.** `edit_schematic_component`
-  (value, footprint, `newReference`, properties) and
-  `set_/remove_schematic_component_property` stopped at the first placed unit,
-  so a quad op-amp renamed from U1 to U501 came out of kicad-cli's netlist as
-  two parts. All placed units with the reference are now changed; positions
-  given for fields keep their offset from each unit's origin.
 
 ### Tooling
 
